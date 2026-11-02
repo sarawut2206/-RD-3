@@ -20,70 +20,134 @@
   </div>
 </header>
 
-<main class="wrap layout">
+<nav class="tabs" id="tabs" aria-label="เมนู" hidden>
+  <div class="wrap">
+    <button type="button" data-view="form" aria-pressed="true">ออกหนังสือ</button>
+    <button type="button" data-view="status" aria-pressed="false">ใครกรอกแล้วบ้าง <span class="count" id="tabCount"></span></button>
+  </div>
+</nav>
 
-  <section class="panel" aria-labelledby="formTitle">
+<main class="wrap layout" id="viewForm">
+
+  <section class="panel" id="wizard" aria-labelledby="formTitle">
     <h2 id="formTitle">กรอกข้อมูลของนักเรียน</h2>
-    <p class="lead">ช่องที่กรอกจะแสดงเป็นแถบเหลืองในตัวอย่างทางขวา (แถบเหลืองจะไม่ติดไปในไฟล์ PDF)</p>
+    <div class="progress" id="progress" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="progress-text" id="progressText" aria-live="polite"></p>
 
     <form id="form" novalidate autocomplete="off">
 
-      <div class="field pick" data-f="pick" hidden>
-        <label for="pickFilter">เลือกชื่อของคุณ</label>
-        <input id="pickFilter" type="search" placeholder="พิมพ์ค้นหาชื่อ หรือเลื่อนหา" autocomplete="off">
-        <select id="pickList" size="7" aria-label="รายชื่อนักศึกษาวิชาทหาร"></select>
-        <p class="hint" id="pickHint"></p>
-        <p class="msg" role="alert"></p>
-      </div>
+      <!-- ขั้นที่ 1 -->
+      <section class="step" data-step="who">
+        <header class="step-head">
+          <span class="step-num">1</span>
+          <div class="step-title"><h3 id="whoTitle">ชื่อ-นามสกุล</h3><p class="step-sum"></p></div>
+          <button type="button" class="step-edit" data-step="who">แก้ไข</button>
+        </header>
+        <div class="step-body">
+          <div class="field pick" data-f="pick" hidden>
+            <label for="pickFilter">กดเลือกชื่อของคุณจากรายชื่อ</label>
+            <input id="pickFilter" type="search" placeholder="พิมพ์ค้นหาชื่อ หรือเลื่อนหา" autocomplete="off">
+            <select id="pickList" size="7" aria-label="รายชื่อนักศึกษาวิชาทหาร"></select>
+            <p class="hint" id="pickHint"></p>
+            <p class="chosen" id="pickChosen"></p>
+            <p class="msg" role="alert"></p>
+          </div>
 
-      <div class="field" data-f="id">
-        <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
-        <input id="id" type="text" inputmode="numeric" placeholder="0 0000 00000 00 0" maxlength="17" autocomplete="off">
-        <p class="hint" id="idHint">พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ</p>
-        <p class="msg" role="alert"></p>
-      </div>
-
-      <div class="row two name-row">
-        <div class="field" data-f="first">
-          <label for="first">ชื่อ</label>
-          <input id="first" type="text" placeholder="ชื่อจริง" maxlength="40" autocomplete="off">
-          <p class="msg" role="alert"></p>
+          <div class="row two name-row">
+            <div class="field" data-f="first">
+              <label for="first">ชื่อ</label>
+              <input id="first" type="text" placeholder="ชื่อจริง" maxlength="40" autocomplete="off">
+              <p class="msg" role="alert"></p>
+            </div>
+            <div class="field" data-f="last">
+              <label for="last">นามสกุล</label>
+              <input id="last" type="text" placeholder="นามสกุล" maxlength="40" autocomplete="off">
+              <p class="msg" role="alert"></p>
+            </div>
+          </div>
+          <div class="step-actions"><button type="button" class="primary step-ok">ถูกต้อง ไปขั้นต่อไป</button></div>
         </div>
-        <div class="field" data-f="last">
-          <label for="last">นามสกุล</label>
-          <input id="last" type="text" placeholder="นามสกุล" maxlength="40" autocomplete="off">
-          <p class="msg" role="alert"></p>
+      </section>
+
+      <!-- ขั้นที่ 2 -->
+      <section class="step" data-step="id">
+        <header class="step-head">
+          <span class="step-num">2</span>
+          <div class="step-title"><h3>เลขประจำตัวประชาชน</h3><p class="step-sum"></p></div>
+          <button type="button" class="step-edit" data-step="id">แก้ไข</button>
+        </header>
+        <div class="step-body">
+          <div class="field" data-f="id">
+            <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
+            <input id="id" type="text" inputmode="numeric" placeholder="0 0000 00000 00 0" maxlength="17" autocomplete="off">
+            <p class="hint" id="idHint">พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ</p>
+            <p class="msg" role="alert"></p>
+          </div>
+          <div class="field" data-f="sid">
+            <label for="sid" id="sidLabel">เลขประจำตัวนักศึกษาวิชาทหาร</label>
+            <input id="sid" type="text" inputmode="numeric" autocomplete="off">
+            <p class="msg" role="alert"></p>
+          </div>
+          <div class="step-actions"><button type="button" class="primary step-ok">ถูกต้อง ไปขั้นต่อไป</button></div>
         </div>
-      </div>
+      </section>
 
-      <div class="field" data-f="sid">
-        <label for="sid" id="sidLabel">เลขประจำตัวนักศึกษาวิชาทหาร</label>
-        <input id="sid" type="text" inputmode="numeric" autocomplete="off">
-        <p class="msg" role="alert"></p>
-      </div>
-
-      <div class="field" data-f="no">
-        <label for="no">ลำดับในบัญชีรายชื่อ</label>
-        <input id="no" type="text" inputmode="numeric" placeholder="เช่น 22" maxlength="3" autocomplete="off">
-        <p class="msg" role="alert"></p>
-      </div>
-
-      <fieldset class="field" data-f="birth">
-        <legend>วัน เดือน ปีเกิด</legend>
-        <div class="row three">
-          <select id="day" aria-label="วันที่เกิด"></select>
-          <select id="month" aria-label="เดือนเกิด"></select>
-          <select id="year" aria-label="ปีเกิด พ.ศ."></select>
+      <!-- ขั้นที่ 3 -->
+      <section class="step" data-step="no">
+        <header class="step-head">
+          <span class="step-num">3</span>
+          <div class="step-title"><h3>ลำดับในบัญชีรายชื่อ</h3><p class="step-sum"></p></div>
+          <button type="button" class="step-edit" data-step="no">แก้ไข</button>
+        </header>
+        <div class="step-body">
+          <div class="field" data-f="no">
+            <label for="no">ลำดับที่ (เลขที่ในห้อง/ในบัญชีรายชื่อ)</label>
+            <input id="no" type="text" inputmode="numeric" placeholder="เช่น 22" maxlength="3" autocomplete="off">
+            <p class="msg" role="alert"></p>
+          </div>
+          <div class="step-actions"><button type="button" class="primary step-ok">ถูกต้อง ไปขั้นต่อไป</button></div>
         </div>
-        <p class="msg" role="alert"></p>
-      </fieldset>
+      </section>
 
-      <div class="actions">
-        <button type="button" id="btnPdf" class="primary">ดาวน์โหลด PDF</button>
-        <button type="button" id="btnPrint">พิมพ์</button>
-        <button type="button" id="btnReset" class="ghost">ล้างข้อมูล</button>
-      </div>
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <!-- ขั้นที่ 4 -->
+      <section class="step" data-step="birth">
+        <header class="step-head">
+          <span class="step-num">4</span>
+          <div class="step-title"><h3>วัน เดือน ปีเกิด</h3><p class="step-sum"></p></div>
+          <button type="button" class="step-edit" data-step="birth">แก้ไข</button>
+        </header>
+        <div class="step-body">
+          <fieldset class="field" data-f="birth">
+            <legend>วัน เดือน ปีเกิด (พ.ศ.)</legend>
+            <div class="row three">
+              <select id="day" aria-label="วันที่เกิด"></select>
+              <select id="month" aria-label="เดือนเกิด"></select>
+              <select id="year" aria-label="ปีเกิด พ.ศ."></select>
+            </div>
+            <p class="msg" role="alert"></p>
+          </fieldset>
+          <div class="step-actions"><button type="button" class="primary step-ok">ถูกต้อง ไปขั้นต่อไป</button></div>
+        </div>
+      </section>
+
+      <!-- ขั้นที่ 5 -->
+      <section class="step" data-step="review">
+        <header class="step-head">
+          <span class="step-num">5</span>
+          <div class="step-title"><h3>ตรวจทานอีกครั้ง แล้วดาวน์โหลด</h3><p class="step-sum"></p></div>
+        </header>
+        <div class="step-body">
+          <p class="review-note">ตรวจข้อมูลด้านล่างและหนังสือตัวอย่างอีกครั้ง ถ้ามีจุดไหนผิด กด “แก้ไข” ที่ข้อนั้นได้เลย</p>
+          <dl class="review" id="reviewList"></dl>
+          <div class="actions">
+            <button type="button" id="btnPdf" class="primary">ดาวน์โหลด PDF</button>
+            <button type="button" id="btnPrint">พิมพ์</button>
+          </div>
+          <p id="status" class="status" role="status" aria-live="polite"></p>
+          <button type="button" id="btnReset" class="ghost restart">เริ่มกรอกใหม่ (คนถัดไป)</button>
+        </div>
+      </section>
+
     </form>
 
     <p class="privacy" id="privacy"></p>
@@ -118,6 +182,26 @@
     </div>
   </section>
 
+</main>
+
+<main class="wrap" id="viewStatus" hidden>
+  <section class="panel status-panel" aria-labelledby="statusTitle">
+    <h2 id="statusTitle">ใครกรอกแล้ว ใครยังไม่กรอก</h2>
+    <p class="big"><b id="doneCount">0</b> <span>จาก</span> <b id="allCount">0</b> <span>คน กรอกแล้ว</span> <span class="pct" id="pct"></span></p>
+    <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="meter"><i></i></div>
+
+    <div class="status-tools">
+      <div class="seg" role="group" aria-label="กรองรายชื่อ">
+        <button type="button" data-filter="todo" aria-pressed="true">ยังไม่กรอก <span class="count" id="cntTodo"></span></button>
+        <button type="button" data-filter="done" aria-pressed="false">กรอกแล้ว <span class="count" id="cntDone"></span></button>
+        <button type="button" data-filter="all" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <input id="statusSearch" type="search" placeholder="ค้นหาชื่อ" autocomplete="off" aria-label="ค้นหาชื่อ">
+      <button type="button" id="btnRefresh" class="ghost">รีเฟรช</button>
+    </div>
+    <p class="hint" id="statusHint"></p>
+    <ol class="status-list" id="statusList"></ol>
+  </section>
 </main>
 
 <script src="config.js"></script>

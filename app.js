@@ -92,8 +92,9 @@ function idChecksumOk(id) {
 
 /* ---------- ตรวจข้อมูล ---------- */
 let lookup = { id: '', key: '', state: 'idle' };
-let people = null;  // [{ k, first, last, name }] จากบัญชีรายชื่อ
+let people = null;  // [{ k, first, last, name, done, no }] จากบัญชีรายชื่อ
 let picked = null;  // คนที่นักเรียนกดเลือก
+let busy = false;
 
 function validate(v) {
   const err = {}, warn = {};
@@ -225,31 +226,126 @@ el.id.addEventListener('input', () => {
   if (el[k].value !== c) el[k].value = c;
 }));
 
+function refresh() { render(); showErrors(false); updateSteps(); }
+
 const keyOf = (node) => ({ day: 'birth', month: 'birth', year: 'birth' }[node.id] || node.id);
 Object.values(el).forEach((n) => {
   if (!(n instanceof HTMLInputElement || n instanceof HTMLSelectElement)) return;
-  n.addEventListener('input', () => { render(); showErrors(false); });
-  n.addEventListener('change', () => { touched.add(keyOf(n)); render(); showErrors(false); });
+  n.addEventListener('input', refresh);
+  n.addEventListener('change', () => { touched.add(keyOf(n)); refresh(); });
   n.addEventListener('blur', () => { touched.add(keyOf(n)); showErrors(false); });
 });
 
 $('btnReset').addEventListener('click', () => {
-  $('form').reset(); touched.clear(); picked = null; lookup = { id: '', key: '', state: 'idle' };
-  if (ROSTER) renderList();
-  setStatus(''); render(); showErrors(false);
+  $('form').reset(); touched.clear(); confirmed.clear(); active = 'who';
+  picked = null; lookup = { id: '', key: '', state: 'idle' };
+  pickFilter.value = ''; $('pickChosen').textContent = '';
+  if (ROSTER) { renderList(); loadPeople(true); }
+  setStatus(''); refresh(); focusStep('who');
 });
 
 function setStatus(msg, bad) { el.status.textContent = msg; el.status.classList.toggle('bad', !!bad); }
-function setBusy(on) { el.btnPdf.disabled = on; el.btnPrint.disabled = on; }
+function setBusy(on) { busy = on; updateSteps(); }
 
 function checkBeforeExport() {
+  const first = FIELD_STEPS.find((s) => !confirmed.has(s));
+  if (first) {
+    active = first; updateSteps(); focusStep(first);
+    setStatus('ยังไม่ได้ยืนยันข้อมูลครบทุกขั้นตอน', true);
+    return false;
+  }
   const err = showErrors(true);
-  const first = Object.keys(err)[0];
-  if (!first) return true;
-  setStatus('ยังกรอกข้อมูลไม่ครบ กรุณาแก้ช่องที่ขึ้นสีแดง', true);
-  const target = document.querySelector(`.field[data-f="${first}"] input, .field[data-f="${first}"] select`);
-  target?.focus();
+  const bad = FIELD_STEPS.find((s) => stepFields[s].some((k) => err[k]));
+  if (!bad) return true;
+  confirmed.delete(bad); active = bad; updateSteps(); focusStep(bad);
+  setStatus('ข้อมูลบางช่องยังไม่ถูกต้อง กรุณาแก้ช่องที่ขึ้นสีแดง', true);
   return false;
+}
+
+/* ---------- ขั้นตอนทีละข้อ: ตรวจแล้วกด "ถูกต้อง" หรือกด "แก้ไข" ---------- */
+const STEP_ORDER = ['who', 'id', 'no', 'birth', 'review'];
+const FIELD_STEPS = STEP_ORDER.slice(0, 4);
+const stepFields = { who: ROSTER ? ['pick'] : ['first', 'last'], id: ['id', 'sid'], no: ['no'], birth: ['birth'] };
+const confirmed = new Set();
+let active = 'who';
+const stepEl = (s) => document.querySelector(`.step[data-step="${s}"]`);
+
+function summaryOf(s, v) {
+  const t = toThai;
+  return {
+    who: `${v.first} ${v.last}`,
+    id: `เลขบัตร ${t(groupId(v.id))} · เลข นศท. ${t(v.sid)}`,
+    no: `ลำดับที่ ${t(v.no)}`,
+    birth: `${t(v.day)} ${MONTHS[v.month - 1] || ''} ${t(v.year)}`,
+  }[s];
+}
+
+function updateSteps() {
+  const v = read();
+  const { err } = validate(v);
+  // ถ้าข้อมูลที่เคยยืนยันกลับไม่ถูกต้อง (เช่น เปลี่ยนชื่อแล้วเลขบัตรไม่ตรง) ให้กลับไปยืนยันใหม่
+  FIELD_STEPS.forEach((s) => { if (confirmed.has(s) && stepFields[s].some((k) => err[k])) confirmed.delete(s); });
+  const all = FIELD_STEPS.every((s) => confirmed.has(s));
+  if (!all && active === 'review') active = FIELD_STEPS.find((s) => !confirmed.has(s));
+
+  STEP_ORDER.forEach((s, i) => {
+    const e = stepEl(s), isDone = confirmed.has(s);
+    e.classList.toggle('is-active', active === s);
+    e.classList.toggle('is-done', isDone && active !== s);
+    e.classList.toggle('is-wait', active !== s && !isDone);
+    if (s !== 'review') {
+      e.querySelector('.step-sum').textContent = isDone ? summaryOf(s, v) : '';
+      e.querySelector('.step-ok').disabled = stepFields[s].some((k) => err[k]);
+    }
+  });
+  $('progress').querySelectorAll('i').forEach((bar, i) => bar.classList.toggle('on', i <= STEP_ORDER.indexOf(active)));
+  $('progressText').textContent = active === 'review'
+    ? 'ขั้นสุดท้าย: ตรวจทานแล้วดาวน์โหลด'
+    : `ขั้นที่ ${STEP_ORDER.indexOf(active) + 1} จาก ${STEP_ORDER.length} · ยืนยันแล้ว ${confirmed.size} จาก ${FIELD_STEPS.length} ข้อ`;
+  el.btnPdf.disabled = el.btnPrint.disabled = busy || !all;
+
+  const rows = all ? [['ชื่อ-นามสกุล', summaryOf('who', v), 'who'], ['เลขประจำตัวประชาชน', toThai(groupId(v.id)), 'id'],
+    ['เลข นศท.', toThai(v.sid), 'id'], ['ลำดับที่', toThai(v.no), 'no'], ['วันเกิด', summaryOf('birth', v), 'birth']] : [];
+  $('reviewList').replaceChildren(...rows.map(([label, value, step]) => {
+    const row = document.createElement('div');
+    const dt = document.createElement('dt'), dd = document.createElement('dd'), b = document.createElement('button');
+    dt.textContent = label; dd.textContent = value;
+    b.type = 'button'; b.textContent = 'แก้ไข'; b.addEventListener('click', () => editStep(step));
+    row.append(dt, dd, b);
+    return row;
+  }));
+}
+
+function focusStep(s) {
+  const e = stepEl(s);
+  e.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  e.querySelector(s === 'review' ? '#btnPdf' : s === 'who' && ROSTER ? '#pickFilter' : 'input:not([readonly]), select')?.focus({ preventScroll: true });
+}
+
+function editStep(s) {
+  confirmed.delete(s);
+  if (s === 'who') confirmed.delete('id'); // เปลี่ยนชื่อ ต้องยืนยันเลขบัตรใหม่
+  active = s;
+  setStatus('');
+  updateSteps();
+  focusStep(s);
+}
+
+document.querySelectorAll('.step-edit').forEach((b) => b.addEventListener('click', () => editStep(b.dataset.step)));
+document.querySelectorAll('.step-ok').forEach((b) => b.addEventListener('click', () => {
+  const s = b.closest('.step').dataset.step;
+  stepFields[s].forEach((k) => touched.add(k));
+  const err = showErrors(false);
+  if (stepFields[s].some((k) => err[k])) return;
+  confirmed.add(s);
+  active = FIELD_STEPS.find((x) => !confirmed.has(x)) || 'review';
+  updateSteps();
+  focusStep(active);
+}));
+
+if (ROSTER) {
+  $('whoTitle').textContent = 'เลือกชื่อของคุณ';
+  $('tabs').hidden = false;
 }
 
 /* ---------- สร้าง PDF ---------- */
@@ -359,25 +455,30 @@ async function callScript(payload) {
 const pickFilter = $('pickFilter'), pickList = $('pickList'), pickHint = $('pickHint');
 const squash = (s) => s.replace(/\s+/g, ' ').trim();
 
-async function loadPeople() {
-  pickHint.textContent = 'กำลังโหลดรายชื่อ…';
+// silent = โหลดซ้ำเพื่ออัปเดตสถานะ "ส่งแล้ว" โดยไม่แตะข้อความของช่องเลือกชื่อ
+async function loadPeople(silent) {
+  if (!silent) pickHint.textContent = 'กำลังโหลดรายชื่อ…';
   try {
     const r = await callScript({ action: 'list' });
     people = r.list
-      .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`) }))
+      .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`), done: !!p.done, no: p.no || '' }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-    pickHint.textContent = `มี ${people.length} รายชื่อ พิมพ์ค้นหาหรือกดเลือกชื่อของคุณ`;
+    if (picked) picked = people.find((p) => p.k === picked.k) || picked;
+    pickHint.textContent = `มี ${people.length} รายชื่อ พิมพ์ค้นหาหรือกดเลือกชื่อของคุณ (✓ = ส่งหนังสือแล้ว)`;
     renderList();
+    renderStatus();
   } catch (e) {
     console.error(e);
+    if (silent && people) return; // รีเฟรชเงียบไม่สำเร็จ ใช้ข้อมูลเดิมต่อ
     people = null;
     pickHint.textContent = 'โหลดรายชื่อไม่สำเร็จ ';
     const retry = document.createElement('button');
     retry.type = 'button'; retry.textContent = 'ลองใหม่';
-    retry.addEventListener('click', loadPeople);
+    retry.addEventListener('click', () => loadPeople());
     pickHint.append(retry);
+    renderStatus();
   }
-  showErrors(false);
+  refresh();
 }
 
 function renderList() {
@@ -385,24 +486,34 @@ function renderList() {
   const q = squash(pickFilter.value);
   const items = people.filter((p) => !q || p.name.includes(q));
   pickList.replaceChildren(...items.map((p) => {
-    const o = new Option(p.name, p.k);
+    const o = new Option(p.done ? `${p.name}   ✓ ส่งแล้ว` : p.name, p.k);
     o.selected = !!picked && picked.k === p.k;
     return o;
   }));
   if (!items.length) pickList.append(Object.assign(new Option('ไม่พบชื่อที่ค้นหา', ''), { disabled: true }));
 }
 
+function showChosen() {
+  const c = $('pickChosen');
+  c.classList.toggle('sent', !!picked?.done);
+  c.textContent = !picked ? '' : picked.done
+    ? `คุณเลือก: ${picked.name} · ชื่อนี้เคยส่งหนังสือแล้ว (ลำดับ ${picked.no}) ส่งซ้ำได้ ระบบจะเก็บไฟล์ใหม่เพิ่ม`
+    : `คุณเลือก: ${picked.name}`;
+}
+
 pickFilter.addEventListener('input', renderList);
 pickList.addEventListener('change', () => {
   const p = people?.find((x) => x.k === pickList.value);
   if (!p) return;
+  if (picked && picked.k !== p.k) { el.id.value = ''; touched.delete('id'); } // เลขบัตรเดิมเป็นของอีกคน
   picked = p;
   touched.add('pick');
+  confirmed.delete('id'); // เปลี่ยนชื่อ ต้องยืนยันเลขบัตรใหม่
   el.first.value = p.first; el.last.value = p.last; el.sid.value = '';
   lookup = { id: '', key: '', state: 'idle' };
+  showChosen();
   verifyId();
-  render();
-  showErrors(false);
+  refresh();
 });
 
 // ยืนยันว่าเลขบัตรตรงกับชื่อที่เลือก (ฝั่งครูเป็นคนเทียบ เว็บไม่เคยได้เลขบัตรของคนอื่น)
@@ -414,7 +525,7 @@ async function verifyId() {
   el.sid.value = '';
   lookup = { id, key, state: 'checking' };
   touched.add('id');
-  showErrors(false);
+  refresh();
   let state = 'error', sid = '';
   try {
     const r = await callScript({ action: 'verify', key, id });
@@ -426,9 +537,59 @@ async function verifyId() {
   if (lookup.id !== id || lookup.key !== key) return; // นักเรียนเปลี่ยนเลขหรือชื่อไปแล้วระหว่างรอคำตอบ
   lookup = { id, key, state };
   if (state === 'found') el.sid.value = sid;
-  render();
-  showErrors(false);
+  refresh();
 }
+
+/* ---------- หน้าสรุป: ใครกรอกแล้ว ใครยังไม่กรอก ---------- */
+let statusFilter = 'todo';
+const statusSearch = $('statusSearch');
+
+function renderStatus() {
+  const list = $('statusList');
+  if (!people) {
+    $('statusHint').textContent = 'ยังโหลดรายชื่อไม่ได้ กดรีเฟรชเพื่อลองใหม่';
+    list.replaceChildren();
+    return;
+  }
+  const done = people.filter((p) => p.done).length, total = people.length;
+  const pct = total ? Math.round((done * 100) / total) : 0;
+  $('doneCount').textContent = done; $('allCount').textContent = total;
+  $('pct').textContent = `(${pct}%)`;
+  $('meter').firstElementChild.style.width = `${pct}%`;
+  $('meter').setAttribute('aria-valuenow', pct);
+  $('cntTodo').textContent = `(${total - done})`; $('cntDone').textContent = `(${done})`;
+  $('tabCount').textContent = `${done}/${total}`;
+
+  const q = squash(statusSearch.value);
+  const rows = people.filter((p) => (statusFilter === 'all' || p.done === (statusFilter === 'done')) && (!q || p.name.includes(q)));
+  $('statusHint').textContent = rows.length ? '' : (q ? 'ไม่พบชื่อที่ค้นหา' : statusFilter === 'todo' ? 'ทุกคนกรอกครบแล้ว' : 'ยังไม่มีใครกรอก');
+  list.replaceChildren(...rows.map((p, i) => {
+    const li = document.createElement('li');
+    li.className = p.done ? 'ok' : 'todo';
+    const idx = document.createElement('span'), nm = document.createElement('span'), tag = document.createElement('span');
+    idx.className = 'idx'; idx.textContent = i + 1;
+    nm.className = 'nm'; nm.textContent = p.name;
+    tag.className = 'tag'; tag.textContent = p.done ? `✓ กรอกแล้ว · ลำดับ ${p.no}` : 'ยังไม่กรอก';
+    li.append(idx, nm, tag);
+    return li;
+  }));
+}
+
+function showView(name) {
+  $('viewForm').hidden = name !== 'form';
+  $('viewStatus').hidden = name !== 'status';
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  if (name === 'status') loadPeople(true);
+}
+document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+  statusFilter = b.dataset.filter;
+  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderStatus();
+}));
+statusSearch.addEventListener('input', renderStatus);
+$('btnRefresh').addEventListener('click', () => loadPeople(true));
+setInterval(() => { if (ROSTER && !$('viewStatus').hidden && !document.hidden) loadPeople(true); }, 60000);
 
 let lastSent = '';
 
@@ -464,6 +625,7 @@ el.btnPdf.addEventListener('click', async () => {
     if (C.uploadUrl) setStatus('ดาวน์โหลดแล้ว กำลังส่งสำเนาให้ครู… อย่าเพิ่งปิดหน้านี้');
     try {
       const r = await sendCopies(v, pdf);
+      if (r === 'sent') loadPeople(true); // ให้หน้าสรุปเห็นว่าส่งแล้ว
       setStatus(r === 'sent'
         ? 'ดาวน์โหลดแล้ว และส่งสำเนาให้ครูเรียบร้อย ตรวจชื่อและตัวเลขในไฟล์อีกครั้งก่อนพิมพ์'
         : 'ดาวน์โหลดแล้ว ตรวจชื่อและตัวเลขในไฟล์อีกครั้งก่อนพิมพ์');
@@ -486,6 +648,7 @@ el.btnPrint.addEventListener('click', async () => {
     setStatus('กำลังส่งสำเนาให้ครู…');
     try {
       await sendCopies(v, await buildPdf(v));
+      loadPeople(true);
       setStatus('ส่งสำเนาให้ครูเรียบร้อย');
     } catch (e) {
       console.error(e);
@@ -509,5 +672,6 @@ fit();
 render();
 document.fonts.ready.then(render); // วัดบรรทัดแรกใหม่เมื่อฟอนต์โหลดเสร็จ
 showErrors(false);
+updateSteps();
 if (ROSTER) loadPeople();
 })();

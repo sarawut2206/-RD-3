@@ -1,25 +1,34 @@
-// ตรวจรายชื่อ นศท. จาก Google Sheet ส่วนตัว และเก็บไฟล์ PDF กับ Word ลงโฟลเดอร์ Drive แยกตามลำดับเลขที่
-// วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วใส่รหัสสองบรรทัดด้านล่าง (ดูขั้นตอนใน README)
-const FOLDER_ID = 'ใส่รหัสโฟลเดอร์ที่นี่';
-const ROSTER_SHEET_ID = 'ใส่รหัส Google Sheet รายชื่อที่นี่';
+// รับข้อมูลจากหน้าเว็บ: ส่งรายชื่อ นศท. ให้เลือก, ยืนยันเลขบัตร, และเก็บไฟล์ PDF กับ Word ลง Drive แยกตามลำดับเลขที่
+// วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วทำให้ใช้งานได้เป็นเว็บแอป (ดูขั้นตอนใน README)
+//
+// ปกติไม่ต้องแก้อะไรในไฟล์นี้: สคริปต์หาโฟลเดอร์และชีตของครูเองจากชื่อ
+//   - โฟลเดอร์ใน Drive ของคุณที่ชื่อมีคำว่า "นำปลด"
+//   - Google ชีตใน Drive ของคุณที่ชื่อมีคำว่า "รายชื่อ" และ "นศท"
+// ถ้าพบหลายรายการ ให้ใส่รหัสตรงนี้แทน (รหัสคือข้อความใน URL หลัง /folders/ หรือระหว่าง /d/ กับ /edit)
+const FOLDER_ID = '';
+const ROSTER_SHEET_ID = '';
 
+const FOLDER_NAME_HINT = 'นำปลด';
 const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const CACHE_SECONDS = 20;
 
 function doGet() {
-  return reply_({ ok: true, service: 'nsd-certificate', students: loadRoster_().length });
+  try {
+    return reply_({ ok: true, service: 'nsd-certificate', students: loadRoster_().length });
+  } catch (err) {
+    return reply_({ ok: false, error: String(err && err.message || err) });
+  }
 }
 
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+
+    // รายชื่อให้นักเรียนกดเลือก + ใครส่งแล้ว: ส่งเฉพาะชื่อ ไม่ส่งเลขบัตรหรือเลข นศท.
+    if (d.action === 'list') return reply_(listPayload_());
+
     const roster = loadRoster_();
-
-    // รายชื่อให้นักเรียนกดเลือก: ส่งเฉพาะชื่อกับรหัสแถว ไม่ส่งเลขบัตรหรือเลข นศท.
-    if (d.action === 'list') {
-      return reply_({ ok: true, list: roster.map(function (s) { return { k: s.key, first: s.first, last: s.last }; }) });
-    }
-
     const id = parseId_(d.id);
 
     // ยืนยันว่าเลขบัตรที่กรอกตรงกับชื่อที่เลือก แล้วจึงคืนเลข นศท.
@@ -40,23 +49,62 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
     try {
-      const folder = subfolder_(DriveApp.getFolderById(FOLDER_ID), label);
+      const folder = subfolder_(rootFolder_(), label);
       save_(folder, pdf, 'application/pdf', label, 'pdf');
       save_(folder, docx, MIME_DOCX, label, 'docx');
     } finally {
       lock.releaseLock();
     }
+    CacheService.getScriptCache().remove('list');
     return reply_({ ok: true, folder: no });
   } catch (err) {
     return reply_({ ok: false, error: String(err && err.message || err) });
   }
 }
 
-// อ่านทุกแท็บ หาแถวหัวตารางจากชื่อคอลัมน์ จึงเพิ่มรายชื่อชุดใหม่เป็นแท็บใหม่ได้
+/* ---------- หาโฟลเดอร์และชีต ---------- */
+
+function resolve_(configured, cacheKey, search, what) {
+  if (configured) return configured;
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(cacheKey);
+  if (hit) return hit;
+  const found = [];
+  const it = search();
+  while (it.hasNext()) found.push(it.next());
+  if (found.length !== 1) {
+    throw new Error('หา ' + what + ' ใน Drive ของบัญชีนี้ได้ ' + found.length + ' รายการ (ต้องมี 1 รายการ) ถ้ามีแล้ว ให้ใส่รหัสในบรรทัดบนสุดของ Code.gs');
+  }
+  cache.put(cacheKey, found[0].getId(), 21600);
+  return found[0].getId();
+}
+
+function rootFolder_() {
+  const id = resolve_(FOLDER_ID, 'folderId', function () {
+    return DriveApp.searchFolders("title contains '" + FOLDER_NAME_HINT + "' and 'me' in owners and trashed = false");
+  }, 'โฟลเดอร์ที่ชื่อมีคำว่า "' + FOLDER_NAME_HINT + '"');
+  return DriveApp.getFolderById(id);
+}
+
+function rosterSheetId_() {
+  return resolve_(ROSTER_SHEET_ID, 'sheetId', function () {
+    return DriveApp.searchFiles("title contains 'รายชื่อ' and title contains 'นศท' and mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false");
+  }, 'Google ชีตที่ชื่อมีคำว่า "รายชื่อ" และ "นศท"');
+}
+
+/* ---------- บัญชีรายชื่อ ---------- */
+
 // คืนอาร์เรย์ [{ key, id, sid, first, last }] เรียงตามชีต; key = "แท็บ-แถว" ใช้อ้างอิงคนในหน้าเว็บโดยไม่เปิดเผยเลขบัตร
 function loadRoster_() {
   const roster = [];
-  SpreadsheetApp.openById(ROSTER_SHEET_ID).getSheets().forEach(function (sheet, t) {
+  const sheetId = rosterSheetId_();
+  let book;
+  try {
+    book = SpreadsheetApp.openById(sheetId);
+  } catch (err) {
+    throw new Error('เปิดชีตรายชื่อไม่ได้ ตรวจว่าเป็น Google ชีต (ไม่ใช่ไฟล์ .xlsx) และบัญชีนี้มีสิทธิ์เข้าถึง: ' + err.message);
+  }
+  book.getSheets().forEach(function (sheet, t) {
     let cols = null;
     sheet.getDataRange().getValues().forEach(function (row, r) {
       if (!cols) { cols = headerColumns_(row); return; }
@@ -67,6 +115,27 @@ function loadRoster_() {
     });
   });
   return roster;
+}
+
+// ใครส่งแล้ว: ดูจากชื่อโฟลเดอร์ "022 ชื่อ นามสกุล" ในโฟลเดอร์ปลายทาง
+function listPayload_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('list');
+  if (hit) return JSON.parse(hit);
+
+  const sent = {};
+  const it = rootFolder_().getFolders();
+  while (it.hasNext()) {
+    const m = /^(\d{3}) (.+)$/.exec(it.next().getName());
+    if (m) sent[m[2].replace(/\s+/g, ' ').trim()] = m[1];
+  }
+  const list = loadRoster_().map(function (s) {
+    const no = sent[(s.first + ' ' + s.last).replace(/\s+/g, ' ').trim()];
+    return { k: s.key, first: s.first, last: s.last, done: !!no, no: no || '' };
+  });
+  const payload = { ok: true, list: list };
+  cache.put('list', JSON.stringify(payload), CACHE_SECONDS);
+  return payload;
 }
 
 function headerColumns_(row) {
