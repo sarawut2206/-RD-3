@@ -20,7 +20,7 @@ const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 const CACHE_SECONDS = 20;
 
 // ใช้เช็กว่าลิงก์ /exec รันโค้ดรุ่นไหน: เปิดลิงก์แล้วดูค่า version
-const VERSION = 'admin-import-3';
+const VERSION = 'admin-import-4';
 
 function doGet() {
   try {
@@ -235,9 +235,11 @@ function docsList_() {
       if (!ext) continue;
       const kind = ext[1].toLowerCase();
       const stamp = (/\((\d{4}-\d\d-\d\d \d{6})\)\.\w+$/.exec(name) || [])[1] || '';
-      if (!best[kind] || stamp > best[kind].stamp) best[kind] = { id: x.getId(), stamp: stamp };
+      if (!best[kind] || stamp > best[kind].stamp) best[kind] = { id: x.getId(), stamp: stamp, file: x };
     }
-    rows.push({ no: m[1], name: m[2], pdf: best.pdf ? best.pdf.id : '', docx: best.docx ? best.docx.id : '', at: best.pdf ? best.pdf.stamp : '' });
+    // at = เวลาที่ไฟล์ PDF ล่าสุดถูกสร้าง (ISO) หน้าเว็บใช้บอกว่าเป็นเอกสารที่ส่งก่อนปรับแบบฟอร์มหรือไม่
+    rows.push({ no: m[1], name: m[2], pdf: best.pdf ? best.pdf.id : '', docx: best.docx ? best.docx.id : '',
+      at: best.pdf ? best.pdf.file.getDateCreated().toISOString() : '' });
   }
   rows.sort(function (a, b) { return a.no < b.no ? -1 : a.no > b.no ? 1 : a.name.localeCompare(b.name); });
   return rows;

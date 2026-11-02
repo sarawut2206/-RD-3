@@ -589,6 +589,45 @@ const statusSearch = $('statusSearch');
 
 const el$ = (tag, props = {}, text) => Object.assign(document.createElement(tag), props, text == null ? {} : { textContent: text });
 const docOf = (p) => docs.find((d) => d.pdf && d.no === p.no && d.name === p.name); // เอกสารของคนที่กรอกแล้ว (จับคู่จากเลขที่+ชื่อโฟลเดอร์)
+// เอกสารที่สร้างก่อนปรับแบบฟอร์ม (config.layoutFixedAt) ขึ้นบรรทัดไม่ตรงฟอร์ม ต้องให้ส่งใหม่
+const isOld = (d) => !!d.at && !!C.layoutFixedAt && new Date(d.at) < new Date(C.layoutFixedAt);
+const sayDocs = (text, bad) => {
+  $('statusHint').textContent = text;
+  const st = $('docsStatus');
+  st.textContent = text;
+  st.classList.toggle('bad', !!bad);
+};
+
+// ลบเอกสารแบบเก่าทั้งหมด (ย้ายโฟลเดอร์ไปถังขยะ) เพื่อให้นักเรียนกรอกใหม่ด้วยแบบฟอร์มใหม่
+async function deleteOldDocs(btn) {
+  const olds = docs.filter(isOld);
+  if (!olds.length) return;
+  if (!confirm(`ลบเอกสารแบบเก่า ${olds.length} ฉบับ เพื่อให้นักเรียนกรอกใหม่ใช่หรือไม่?\nโฟลเดอร์ของแต่ละคนจะถูกย้ายไปถังขยะใน Drive (กู้คืนได้ 30 วัน) แล้วกลับเป็น "ยังไม่กรอก"`)) return;
+  if (btn) btn.disabled = true;
+  let n = 0;
+  const failed = [];
+  for (const [i, d] of olds.entries()) {
+    sayDocs(`กำลังลบแบบเก่า… ${i + 1}/${olds.length}`);
+    const p = people?.find((x) => x.no === d.no && x.name === d.name);
+    if (!p) { failed.push(d.name); continue; }
+    try {
+      await adminCall('adminDelete', { key: p.k });
+      n++;
+    } catch (e) {
+      failed.push(d.name);
+      if (/รหัสครู|ล็อก/.test(String(e.message))) { adminLogout(); break; }
+    }
+  }
+  await Promise.all([loadPeople(true), loadDocs()]); // โหลดซ้ำก่อน แล้วค่อยแสดงข้อความ ไม่เช่นนั้นข้อความถูกเขียนทับ
+  sayDocs(`ลบแบบเก่าแล้ว ${n} ฉบับ ให้นักเรียนกลุ่มนี้กรอกใหม่${failed.length ? ` · ลบไม่ได้ ${failed.length} ฉบับ (${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}) ใช้ปุ่ม "ลบ ให้กรอกใหม่" ทีละคน` : ''}`, failed.length > 0);
+  if (btn) btn.disabled = false;
+}
+
+// ถามยืนยันก่อนพิมพ์/รวมไฟล์ ถ้ามีเอกสารแบบเก่าปนอยู่ในชุดที่เลือก
+const confirmOld = (list) => {
+  const n = list.filter(isOld).length;
+  return !n || confirm(`มี ${n} ฉบับในชุดนี้เป็นแบบเก่า (ขึ้นบรรทัดไม่ตรงฟอร์ม) ยังต้องการดำเนินการต่อหรือไม่?`);
+};
 
 // แถบครูในหน้าสรุป: ยังไม่เข้าระบบ = ช่องใส่รหัสครู, เข้าแล้ว = ปุ่มพิมพ์ทั้งหมด + ปุ่มพิมพ์/ลบข้างชื่อคนที่กรอกแล้ว
 function renderStatusAdmin() {
@@ -611,10 +650,18 @@ function renderStatusAdmin() {
   const printAll = el$('button', { type: 'button', className: 'primary' },
     docsLoading ? 'กำลังโหลดเอกสาร…' : `พิมพ์ทั้งหมด (${ready} ฉบับ เรียงตามเลขที่)`);
   printAll.disabled = docsLoading || !ready;
-  printAll.addEventListener('click', () => printDocs(docs.filter((d) => d.pdf), printAll));
+  printAll.addEventListener('click', () => { const l = docs.filter((d) => d.pdf); if (confirmOld(l)) printDocs(l, printAll); });
   const out = el$('button', { type: 'button' }, 'ออกจากโหมดครู');
   out.addEventListener('click', adminLogout);
-  box.replaceChildren(printAll, out, ' โหมดครู: มีปุ่ม "พิมพ์" และ "ลบ ให้กรอกใหม่" ข้างชื่อคนที่กรอกแล้ว');
+  const items = [printAll, out, ' โหมดครู: มีปุ่ม "พิมพ์" และ "ลบ ให้กรอกใหม่" ข้างชื่อคนที่กรอกแล้ว'];
+  const olds = docs.filter(isOld).length;
+  if (olds) {
+    const warn = el$('span', { className: 'old-note' }, `⚠ มี ${olds} ฉบับเป็นแบบเก่า (ส่งก่อนปรับฟอร์ม) `);
+    const delOld = el$('button', { type: 'button', className: 'del' }, `ลบแบบเก่าทั้งหมด (${olds}) ให้กรอกใหม่`);
+    delOld.addEventListener('click', () => deleteOldDocs(delOld));
+    items.push(el$('br'), warn, delOld);
+  }
+  box.replaceChildren(...items);
 }
 
 // พิมพ์: ดึง PDF ที่นักเรียนส่งมา เอารูปหนังสือมาวางทีละหน้า A4 แล้วเรียกหน้าต่างพิมพ์ของเบราว์เซอร์
@@ -660,8 +707,7 @@ async function deleteSubmission(p) {
   hint.textContent = `กำลังลบข้อมูลของ ${p.name}…`;
   try {
     const r = await adminCall('adminDelete', { key: p.k });
-    loadDocs(); // รายการพิมพ์ต้องไม่มีไฟล์ที่เพิ่งลบ
-    await loadPeople(true);
+    await Promise.all([loadPeople(true), loadDocs()]); // รายการพิมพ์ต้องไม่มีไฟล์ที่เพิ่งลบ
     hint.textContent = r.trashed ? `ลบข้อมูลของ ${p.name} แล้ว (${r.trashed} โฟลเดอร์ ย้ายไปถังขยะใน Drive) ให้นักเรียนกรอกใหม่ได้` : `ไม่พบโฟลเดอร์ของ ${p.name} ใน Drive (อาจถูกลบไปแล้ว)`;
   } catch (e) {
     if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
@@ -703,9 +749,10 @@ function renderStatus() {
       const print = el$('button', { type: 'button', className: 'prt' }, 'พิมพ์');
       print.disabled = !doc;
       print.title = doc ? '' : docsLoading ? 'กำลังโหลดเอกสาร' : 'ไม่พบไฟล์ของคนนี้ใน Drive';
-      print.addEventListener('click', () => printDocs([doc], print));
+      print.addEventListener('click', () => { if (confirmOld([doc])) printDocs([doc], print); });
       const del = el$('button', { type: 'button', className: 'del' }, 'ลบ ให้กรอกใหม่');
       del.addEventListener('click', () => deleteSubmission(p));
+      if (doc && isOld(doc)) li.append(el$('span', { className: 'old-tag', title: 'ส่งก่อนปรับฟอร์ม ขึ้นบรรทัดไม่ตรงฟอร์ม' }, '⚠ แบบเก่า'));
       li.append(print, del);
     }
     return li;
@@ -738,6 +785,7 @@ const adminCall = (action, extra) => callScript({ action, pin: admin.pin, ...ext
 function adminLogout() {
   admin.pin = '';
   docs = [];
+  $('btnDocsOld').hidden = true;
   $('docsBody').replaceChildren();
   $('docsSummary').textContent = '';
   $('docsStatus').textContent = '';
@@ -965,16 +1013,20 @@ function renderDocs() {
   const count = {};
   docs.forEach((d) => { count[d.no] = (count[d.no] || 0) + 1; });
   const dup = Object.keys(count).filter((k) => count[k] > 1);
+  const olds = docs.filter(isOld).length;
   $('docsSummary').textContent = docs.length
-    ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}`
+    ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}${olds ? ` · ⚠ แบบเก่า ${olds} ฉบับ (ส่งก่อนปรับฟอร์ม ขึ้นบรรทัดไม่ตรงฟอร์ม)` : ''}`
     : 'ยังไม่มีเอกสารที่ส่งเข้ามา';
   $('btnDocsMerge').disabled = !docs.some((d) => d.pdf);
+  $('btnDocsOld').hidden = !olds;
+  $('btnDocsOld').textContent = `ลบแบบเก่าทั้งหมด (${olds}) ให้กรอกใหม่`;
   renderStatus(); // ปุ่มพิมพ์ในหน้าสรุปใช้รายการเดียวกัน
   $('docsBody').replaceChildren(...docs.map((d) => {
     const tr = document.createElement('tr');
     if (count[d.no] > 1) tr.className = 'dup';
     const no = document.createElement('td'), nm = document.createElement('td'), act = document.createElement('td');
     no.textContent = +d.no; nm.textContent = d.name;
+    if (isOld(d)) nm.append(el$('span', { className: 'old-tag' }, '⚠ แบบเก่า'));
     [['pdf', 'PDF'], ['docx', 'Word']].forEach(([kind, label]) => {
       if (!d[kind]) return;
       const b = document.createElement('button');
@@ -1022,6 +1074,7 @@ async function mergeDocs() {
   const picked = docs.filter((d) => d.pdf && +d.no >= from && +d.no <= to);
   st.classList.remove('bad');
   if (!picked.length) { st.classList.add('bad'); st.textContent = 'ไม่มีเอกสารในช่วงเลขที่นี้'; return; }
+  if (!confirmOld(picked)) return;
   btn.disabled = true;
   try {
     const files = await fetchDriveFiles(picked.map((d) => d.pdf), (n, total) => { st.textContent = `กำลังรวมไฟล์… ${n}/${total}`; });
@@ -1040,6 +1093,7 @@ async function mergeDocs() {
 }
 
 $('btnDocsMerge').addEventListener('click', mergeDocs);
+$('btnDocsOld').addEventListener('click', () => deleteOldDocs($('btnDocsOld')));
 $('btnDocsReload').addEventListener('click', loadDocs);
 ['docFrom', 'docTo'].forEach((id) => $(id).addEventListener('input', () => { $(id).value = digitsOnly($(id).value).slice(0, 3); }));
 

@@ -103,6 +103,10 @@ input[type="file"] { padding: 8px; }
 .imp-preview th { background: #f1f4f8; }
 
 .docs-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.old-tag { display: inline-block; margin-left: 8px; padding: 0 10px; border-radius: 999px; background: #fff3e0; color: var(--warn); font-size: .95rem; }
+.status-list .old-tag { flex: none; margin-left: 0; }
+.old-note { color: var(--warn); }
+button.danger { border-color: var(--bad); color: var(--bad); font-weight: 400; }
 .docs-tools input { width: 5.5em; min-height: 40px; text-align: center; }
 .docs-tools .primary { flex: 1 1 220px; }
 .docs-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
