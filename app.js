@@ -52,15 +52,18 @@ $('pPhone').textContent = `${FIXED.phoneLabel} : ${FIXED.phone}`;
 $('pDate').textContent = FIXED.date;
 
 $('privacy').textContent = ROSTER
-  ? 'ระบบใช้เลขประจำตัวประชาชนตรวจกับบัญชีรายชื่อของครู และเมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
+  ? 'ระบบใช้เลขประจำตัวประชาชนยืนยันว่าตรงกับชื่อที่เลือกในบัญชีรายชื่อของครู และเมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
   : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
 
 $('sidLabel').textContent = `เลขประจำตัวนักศึกษาวิชาทหาร (${C.sidLength} หลัก)`;
 el.sid.placeholder = '0'.repeat(C.sidLength);
 el.sid.maxLength = C.sidLength;
 if (ROSTER) {
-  [el.first, el.last, el.sid].forEach((i) => { i.readOnly = true; i.placeholder = 'ระบบเติมให้จากเลขบัตร'; });
-  $('idHint').textContent = 'กรอกช่องนี้ก่อน ระบบจะเติมชื่อ นามสกุล และเลข นศท. ให้จากบัญชีรายชื่อ';
+  document.body.classList.add('roster');
+  document.querySelector('.field.pick').hidden = false;
+  [el.first, el.last, el.sid].forEach((i) => { i.readOnly = true; });
+  el.sid.placeholder = 'ระบบเติมให้หลังยืนยันเลขบัตร';
+  $('idHint').textContent = 'ระบบจะตรวจว่าตรงกับชื่อที่เลือก และเติมเลข นศท. ให้';
 }
 
 /* ---------- อ่านค่าจากฟอร์ม ---------- */
@@ -88,15 +91,18 @@ function idChecksumOk(id) {
 }
 
 /* ---------- ตรวจข้อมูล ---------- */
-let lookup = { id: '', state: 'idle' };
+let lookup = { id: '', key: '', state: 'idle' };
+let people = null;  // [{ k, first, last, name }] จากบัญชีรายชื่อ
+let picked = null;  // คนที่นักเรียนกดเลือก
 
 function validate(v) {
   const err = {}, warn = {};
+  if (ROSTER && !picked) err.pick = people ? 'กรุณากดเลือกชื่อของคุณจากรายชื่อ' : 'ยังโหลดรายชื่อไม่สำเร็จ กรุณากดลองใหม่ หรือแจ้งครูผู้กำกับ';
   if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
   else if (ROSTER) {
-    if (lookup.state === 'checking') err.id = 'กำลังตรวจบัญชีรายชื่อ…';
-    else if (lookup.state === 'missing') err.id = 'ไม่พบเลขนี้ในบัญชีรายชื่อ กรุณาเช็กกับบัตรอีกครั้ง หรือแจ้งครูผู้กำกับ';
-    else if (lookup.state !== 'found') err.id = 'ตรวจบัญชีรายชื่อไม่สำเร็จ กรุณาลบเลขตัวสุดท้ายแล้วพิมพ์ใหม่ หรือแจ้งครูผู้กำกับ';
+    if (picked && lookup.state === 'checking') err.id = 'กำลังตรวจกับบัญชีรายชื่อ…';
+    else if (picked && lookup.state === 'mismatch') err.id = 'เลขบัตรไม่ตรงกับชื่อที่เลือก กรุณาเช็กชื่อและเลขบัตรอีกครั้ง หรือแจ้งครูผู้กำกับ';
+    else if (picked && lookup.state !== 'found') err.id = 'ตรวจกับบัญชีรายชื่อไม่สำเร็จ กรุณาลบเลขตัวสุดท้ายแล้วพิมพ์ใหม่ หรือแจ้งครูผู้กำกับ';
   } else {
     if (!idChecksumOk(v.id)) warn.id = 'เลขนี้ไม่ผ่านการตรวจสอบหลักสุดท้าย กรุณาเช็กกับบัตรอีกครั้ง';
     if (!v.first) err.first = 'กรุณากรอกชื่อ';
@@ -208,7 +214,7 @@ el.id.addEventListener('input', () => {
   const d = digitsOnly(el.id.value).slice(0, 13);
   const g = groupId(d);
   if (el.id.value !== g) el.id.value = g;
-  if (ROSTER && d !== lookup.id) lookupRoster(d);
+  if (ROSTER) verifyId();
 });
 [el.no, el.sid].forEach((i) => i.addEventListener('input', () => {
   const d = digitsOnly(i.value).slice(0, i === el.no ? 3 : C.sidLength);
@@ -228,7 +234,9 @@ Object.values(el).forEach((n) => {
 });
 
 $('btnReset').addEventListener('click', () => {
-  $('form').reset(); touched.clear(); lookup = { id: '', state: 'idle' }; setStatus(''); render(); showErrors(false);
+  $('form').reset(); touched.clear(); picked = null; lookup = { id: '', key: '', state: 'idle' };
+  if (ROSTER) renderList();
+  setStatus(''); render(); showErrors(false);
 });
 
 function setStatus(msg, bad) { el.status.textContent = msg; el.status.classList.toggle('bad', !!bad); }
@@ -347,27 +355,77 @@ async function callScript(payload) {
   return reply;
 }
 
-function fillFromRoster(s) {
-  el.first.value = s.first; el.last.value = s.last; el.sid.value = s.sid;
+/* ---------- เลือกชื่อจากบัญชีรายชื่อ ---------- */
+const pickFilter = $('pickFilter'), pickList = $('pickList'), pickHint = $('pickHint');
+const squash = (s) => s.replace(/\s+/g, ' ').trim();
+
+async function loadPeople() {
+  pickHint.textContent = 'กำลังโหลดรายชื่อ…';
+  try {
+    const r = await callScript({ action: 'list' });
+    people = r.list
+      .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+    pickHint.textContent = `มี ${people.length} รายชื่อ พิมพ์ค้นหาหรือกดเลือกชื่อของคุณ`;
+    renderList();
+  } catch (e) {
+    console.error(e);
+    people = null;
+    pickHint.textContent = 'โหลดรายชื่อไม่สำเร็จ ';
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.textContent = 'ลองใหม่';
+    retry.addEventListener('click', loadPeople);
+    pickHint.append(retry);
+  }
+  showErrors(false);
 }
 
-async function lookupRoster(id) {
-  fillFromRoster({ first: '', last: '', sid: '' });
-  if (id.length !== 13) { lookup = { id, state: 'idle' }; return; }
-  lookup = { id, state: 'checking' };
+function renderList() {
+  if (!people) return;
+  const q = squash(pickFilter.value);
+  const items = people.filter((p) => !q || p.name.includes(q));
+  pickList.replaceChildren(...items.map((p) => {
+    const o = new Option(p.name, p.k);
+    o.selected = !!picked && picked.k === p.k;
+    return o;
+  }));
+  if (!items.length) pickList.append(Object.assign(new Option('ไม่พบชื่อที่ค้นหา', ''), { disabled: true }));
+}
+
+pickFilter.addEventListener('input', renderList);
+pickList.addEventListener('change', () => {
+  const p = people?.find((x) => x.k === pickList.value);
+  if (!p) return;
+  picked = p;
+  touched.add('pick');
+  el.first.value = p.first; el.last.value = p.last; el.sid.value = '';
+  lookup = { id: '', key: '', state: 'idle' };
+  verifyId();
+  render();
+  showErrors(false);
+});
+
+// ยืนยันว่าเลขบัตรตรงกับชื่อที่เลือก (ฝั่งครูเป็นคนเทียบ เว็บไม่เคยได้เลขบัตรของคนอื่น)
+async function verifyId() {
+  const id = digitsOnly(el.id.value).slice(0, 13);
+  const key = picked ? picked.k : '';
+  if (!picked || id.length !== 13) { el.sid.value = ''; lookup = { id, key, state: 'idle' }; return; }
+  if (lookup.id === id && lookup.key === key && lookup.state !== 'idle') return;
+  el.sid.value = '';
+  lookup = { id, key, state: 'checking' };
   touched.add('id');
   showErrors(false);
-  let state = 'error', student = null;
+  let state = 'error', sid = '';
   try {
-    const r = await callScript({ action: 'lookup', id });
-    state = r.found ? 'found' : 'missing';
-    student = r;
+    const r = await callScript({ action: 'verify', key, id });
+    state = r.found ? 'found' : 'mismatch';
+    sid = r.sid || '';
   } catch (e) {
     console.error(e);
   }
-  if (lookup.id !== id) return; // นักเรียนแก้เลขไปแล้วระหว่างรอคำตอบ
-  lookup = { id, state };
-  if (state === 'found') fillFromRoster(student);
+  if (lookup.id !== id || lookup.key !== key) return; // นักเรียนเปลี่ยนเลขหรือชื่อไปแล้วระหว่างรอคำตอบ
+  lookup = { id, key, state };
+  if (state === 'found') el.sid.value = sid;
   render();
   showErrors(false);
 }
@@ -451,4 +509,5 @@ fit();
 render();
 document.fonts.ready.then(render); // วัดบรรทัดแรกใหม่เมื่อฟอนต์โหลดเสร็จ
 showErrors(false);
+if (ROSTER) loadPeople();
 })();

@@ -58,6 +58,11 @@ input:focus, select:focus, button:focus-visible { outline: 3px solid #9cc2e6; ou
 .field.warn input { border-color: #d49a1a; }
 
 input[readonly] { background: #f1f4f8; }
+.roster .name-row { display: none; }
+#pickList { margin-top: 6px; padding: 4px; min-height: 0; height: 11.5em; }
+#pickList option { padding: 6px 8px; border-radius: 6px; }
+#pickList option:checked { background: var(--accent) linear-gradient(0deg, var(--accent), var(--accent)); color: var(--accent-ink); }
+.hint button { min-height: 0; padding: 0 8px; margin-left: 6px; font-weight: 400; }
 .hint:empty { display: none; }
 .hint { margin: 3px 0 0; color: var(--muted); font-size: .9rem; }
 .msg { margin: 3px 0 0; min-height: 0; font-size: .95rem; color: var(--bad); }

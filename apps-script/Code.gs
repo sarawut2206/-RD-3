@@ -7,19 +7,29 @@ const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function doGet() {
-  return reply_({ ok: true, service: 'nsd-certificate', students: Object.keys(loadRoster_()).length });
+  return reply_({ ok: true, service: 'nsd-certificate', students: loadRoster_().length });
 }
 
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
-    const student = loadRoster_()[parseId_(d.id)];
+    const roster = loadRoster_();
 
-    if (d.action === 'lookup') {
-      if (!student) return reply_({ ok: true, found: false });
-      return reply_({ ok: true, found: true, first: student.first, last: student.last, sid: student.sid });
+    // รายชื่อให้นักเรียนกดเลือก: ส่งเฉพาะชื่อกับรหัสแถว ไม่ส่งเลขบัตรหรือเลข นศท.
+    if (d.action === 'list') {
+      return reply_({ ok: true, list: roster.map(function (s) { return { k: s.key, first: s.first, last: s.last }; }) });
     }
 
+    const id = parseId_(d.id);
+
+    // ยืนยันว่าเลขบัตรที่กรอกตรงกับชื่อที่เลือก แล้วจึงคืนเลข นศท.
+    if (d.action === 'verify') {
+      const s = roster.filter(function (x) { return x.key === String(d.key); })[0];
+      if (!s || s.id !== id) return reply_({ ok: true, found: false });
+      return reply_({ ok: true, found: true, sid: s.sid });
+    }
+
+    const student = roster.filter(function (x) { return x.id === id; })[0];
     if (!student) throw new Error('not in roster');
     const no = parseNo_(d.no);
     const label = no + ' ' + student.first + ' ' + student.last;
@@ -43,16 +53,17 @@ function doPost(e) {
 }
 
 // อ่านทุกแท็บ หาแถวหัวตารางจากชื่อคอลัมน์ จึงเพิ่มรายชื่อชุดใหม่เป็นแท็บใหม่ได้
+// คืนอาร์เรย์ [{ key, id, sid, first, last }] เรียงตามชีต; key = "แท็บ-แถว" ใช้อ้างอิงคนในหน้าเว็บโดยไม่เปิดเผยเลขบัตร
 function loadRoster_() {
-  const roster = {};
-  SpreadsheetApp.openById(ROSTER_SHEET_ID).getSheets().forEach(function (sheet) {
+  const roster = [];
+  SpreadsheetApp.openById(ROSTER_SHEET_ID).getSheets().forEach(function (sheet, t) {
     let cols = null;
-    sheet.getDataRange().getValues().forEach(function (row) {
+    sheet.getDataRange().getValues().forEach(function (row, r) {
       if (!cols) { cols = headerColumns_(row); return; }
       const id = digits_(row[cols.id]);
       const sid = digits_(row[cols.sid]);
       const name = splitName_(row[cols.name]);
-      if (id.length === 13 && sid && name) roster[id] = { first: name.first, last: name.last, sid: sid };
+      if (id.length === 13 && sid && name) roster.push({ key: t + '-' + r, id: id, sid: sid, first: name.first, last: name.last });
     });
   });
   return roster;

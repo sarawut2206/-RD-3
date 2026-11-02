@@ -28,6 +28,14 @@
 
     <form id="form" novalidate autocomplete="off">
 
+      <div class="field pick" data-f="pick" hidden>
+        <label for="pickFilter">เลือกชื่อของคุณ</label>
+        <input id="pickFilter" type="search" placeholder="พิมพ์ค้นหาชื่อ หรือเลื่อนหา" autocomplete="off">
+        <select id="pickList" size="7" aria-label="รายชื่อนักศึกษาวิชาทหาร"></select>
+        <p class="hint" id="pickHint"></p>
+        <p class="msg" role="alert"></p>
+      </div>
+
       <div class="field" data-f="id">
         <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
         <input id="id" type="text" inputmode="numeric" placeholder="0 0000 00000 00 0" maxlength="17" autocomplete="off">
@@ -35,7 +43,7 @@
         <p class="msg" role="alert"></p>
       </div>
 
-      <div class="row two">
+      <div class="row two name-row">
         <div class="field" data-f="first">
           <label for="first">ชื่อ</label>
           <input id="first" type="text" placeholder="ชื่อจริง" maxlength="40" autocomplete="off">
