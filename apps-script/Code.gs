@@ -19,11 +19,14 @@ const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const CACHE_SECONDS = 20;
 
+// ใช้เช็กว่าลิงก์ /exec รันโค้ดรุ่นไหน: เปิดลิงก์แล้วดูค่า version
+const VERSION = 'admin-import-1';
+
 function doGet() {
   try {
-    return reply_({ ok: true, service: 'nsd-certificate', students: loadRoster_().length });
+    return reply_({ ok: true, service: 'nsd-certificate', version: VERSION, students: loadRoster_().length });
   } catch (err) {
-    return reply_({ ok: false, error: String(err && err.message || err) });
+    return reply_({ ok: false, service: 'nsd-certificate', version: VERSION, error: String(err && err.message || err) });
   }
 }
 
