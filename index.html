@@ -28,6 +28,13 @@
 
     <form id="form" novalidate autocomplete="off">
 
+      <div class="field" data-f="id">
+        <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
+        <input id="id" type="text" inputmode="numeric" placeholder="0 0000 00000 00 0" maxlength="17" autocomplete="off">
+        <p class="hint" id="idHint">พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ</p>
+        <p class="msg" role="alert"></p>
+      </div>
+
       <div class="row two">
         <div class="field" data-f="first">
           <label for="first">ชื่อ</label>
@@ -41,22 +48,15 @@
         </div>
       </div>
 
+      <div class="field" data-f="sid">
+        <label for="sid" id="sidLabel">เลขประจำตัวนักศึกษาวิชาทหาร</label>
+        <input id="sid" type="text" inputmode="numeric" autocomplete="off">
+        <p class="msg" role="alert"></p>
+      </div>
+
       <div class="field" data-f="no">
         <label for="no">ลำดับในบัญชีรายชื่อ</label>
         <input id="no" type="text" inputmode="numeric" placeholder="เช่น 22" maxlength="3" autocomplete="off">
-        <p class="msg" role="alert"></p>
-      </div>
-
-      <div class="field" data-f="id">
-        <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
-        <input id="id" type="text" inputmode="numeric" placeholder="0 0000 00000 00 0" maxlength="17" autocomplete="off">
-        <p class="hint">พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ</p>
-        <p class="msg" role="alert"></p>
-      </div>
-
-      <div class="field" data-f="sid">
-        <label for="sid">เลขประจำตัวนักศึกษาวิชาทหาร (9 หลัก)</label>
-        <input id="sid" type="text" inputmode="numeric" placeholder="000000000" maxlength="9" autocomplete="off">
         <p class="msg" role="alert"></p>
       </div>
 

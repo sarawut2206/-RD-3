@@ -13,7 +13,10 @@ const toArabic = (s) => s.replace(/[๐-๙]/g, (d) => TH_DIGITS.indexOf(d));
 const digitsOnly = (s) => toArabic(s).replace(/\D/g, '');
 
 // ตัวอย่างที่แสดงเป็นสีเทาในหนังสือ ตอนที่ยังไม่ได้กรอก
-const PLACEHOLDER = { first: 'ชื่อ', last: 'นามสกุล', no: '๐๐', id: '๐ ๐๐๐๐ ๐๐๐๐๐ ๐๐ ๐', sid: '๐๐๐๐๐๐๐๐๐', day: '๐๐', month: 'เดือน', year: '๐๐๐๐' };
+const PLACEHOLDER = { first: 'ชื่อ', last: 'นามสกุล', no: '๐๐', id: '๐ ๐๐๐๐ ๐๐๐๐๐ ๐๐ ๐', sid: '๐'.repeat(C.sidLength), day: '๐๐', month: 'เดือน', year: '๐๐๐๐' };
+
+// มี uploadUrl = ชื่อและเลข นศท. มาจากบัญชีรายชื่อของครู นักเรียนกรอกเองไม่ได้
+const ROSTER = !!C.uploadUrl;
 
 const el = {
   first: $('first'), last: $('last'), no: $('no'), id: $('id'), sid: $('sid'),
@@ -48,9 +51,17 @@ $('pSigner').textContent = `( ${FIXED.signer} )`;
 $('pPhone').textContent = `${FIXED.phoneLabel} : ${FIXED.phone}`;
 $('pDate').textContent = FIXED.date;
 
-$('privacy').textContent = C.uploadUrl
-  ? 'เมื่อกดดาวน์โหลดหรือพิมพ์ ระบบจะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
+$('privacy').textContent = ROSTER
+  ? 'ระบบใช้เลขประจำตัวประชาชนตรวจกับบัญชีรายชื่อของครู และเมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
   : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
+
+$('sidLabel').textContent = `เลขประจำตัวนักศึกษาวิชาทหาร (${C.sidLength} หลัก)`;
+el.sid.placeholder = '0'.repeat(C.sidLength);
+el.sid.maxLength = C.sidLength;
+if (ROSTER) {
+  [el.first, el.last, el.sid].forEach((i) => { i.readOnly = true; i.placeholder = 'ระบบเติมให้จากเลขบัตร'; });
+  $('idHint').textContent = 'กรอกช่องนี้ก่อน ระบบจะเติมชื่อ นามสกุล และเลข นศท. ให้จากบัญชีรายชื่อ';
+}
 
 /* ---------- อ่านค่าจากฟอร์ม ---------- */
 const cleanName = (s) => s.replace(/[^ก-๎ a-zA-Z.\-]/g, '').replace(/\s+/g, ' ').trim();
@@ -77,17 +88,24 @@ function idChecksumOk(id) {
 }
 
 /* ---------- ตรวจข้อมูล ---------- */
+let lookup = { id: '', state: 'idle' };
+
 function validate(v) {
   const err = {}, warn = {};
-  if (!v.first) err.first = 'กรุณากรอกชื่อ';
-  if (!v.last) err.last = 'กรุณากรอกนามสกุล';
+  if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
+  else if (ROSTER) {
+    if (lookup.state === 'checking') err.id = 'กำลังตรวจบัญชีรายชื่อ…';
+    else if (lookup.state === 'missing') err.id = 'ไม่พบเลขนี้ในบัญชีรายชื่อ กรุณาเช็กกับบัตรอีกครั้ง หรือแจ้งครูผู้กำกับ';
+    else if (lookup.state !== 'found') err.id = 'ตรวจบัญชีรายชื่อไม่สำเร็จ กรุณาลบเลขตัวสุดท้ายแล้วพิมพ์ใหม่ หรือแจ้งครูผู้กำกับ';
+  } else {
+    if (!idChecksumOk(v.id)) warn.id = 'เลขนี้ไม่ผ่านการตรวจสอบหลักสุดท้าย กรุณาเช็กกับบัตรอีกครั้ง';
+    if (!v.first) err.first = 'กรุณากรอกชื่อ';
+    if (!v.last) err.last = 'กรุณากรอกนามสกุล';
+    if (v.sid.length !== C.sidLength) err.sid = `เลขประจำตัว นศท. ต้องมี ${C.sidLength} หลัก (ตอนนี้ ${v.sid.length} หลัก)`;
+  }
+
   if (!v.no) err.no = 'กรุณากรอกลำดับในบัญชีรายชื่อ';
   else if (+v.no < 1) err.no = 'ลำดับต้องเริ่มจาก 1';
-
-  if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
-  else if (!idChecksumOk(v.id)) warn.id = 'เลขนี้ไม่ผ่านการตรวจสอบหลักสุดท้าย กรุณาเช็กกับบัตรอีกครั้ง';
-
-  if (v.sid.length !== 9) err.sid = `เลขประจำตัว นศท. ต้องมี 9 หลัก (ตอนนี้ ${v.sid.length} หลัก)`;
 
   if (!v.day || !v.month || !v.year) err.birth = 'กรุณาเลือกวัน เดือน และปีเกิดให้ครบ';
   else {
@@ -187,11 +205,13 @@ function render() {
 
 /* ---------- ช่องกรอก ---------- */
 el.id.addEventListener('input', () => {
-  const g = groupId(digitsOnly(el.id.value).slice(0, 13));
+  const d = digitsOnly(el.id.value).slice(0, 13);
+  const g = groupId(d);
   if (el.id.value !== g) el.id.value = g;
+  if (ROSTER && d !== lookup.id) lookupRoster(d);
 });
 [el.no, el.sid].forEach((i) => i.addEventListener('input', () => {
-  const d = digitsOnly(i.value).slice(0, i === el.no ? 3 : 9);
+  const d = digitsOnly(i.value).slice(0, i === el.no ? 3 : C.sidLength);
   if (i.value !== d) i.value = d;
 }));
 ['first', 'last'].forEach((k) => el[k].addEventListener('input', () => {
@@ -208,7 +228,7 @@ Object.values(el).forEach((n) => {
 });
 
 $('btnReset').addEventListener('click', () => {
-  $('form').reset(); touched.clear(); setStatus(''); render(); showErrors(false);
+  $('form').reset(); touched.clear(); lookup = { id: '', state: 'idle' }; setStatus(''); render(); showErrors(false);
 });
 
 function setStatus(msg, bad) { el.status.textContent = msg; el.status.classList.toggle('bad', !!bad); }
@@ -313,7 +333,45 @@ async function makeDocx(v) {
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }
 
-/* ---------- ส่งสำเนาเข้า Google Drive ---------- */
+/* ---------- คุยกับ Apps Script: ตรวจรายชื่อ และส่งสำเนาเข้า Google Drive ---------- */
+async function callScript(payload) {
+  // text/plain เพื่อไม่ให้เบราว์เซอร์ส่ง preflight ซึ่ง Apps Script ไม่รองรับ
+  const res = await fetch(C.uploadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(90000),
+  });
+  const reply = await res.json();
+  if (!reply.ok) throw new Error(reply.error || 'script failed');
+  return reply;
+}
+
+function fillFromRoster(s) {
+  el.first.value = s.first; el.last.value = s.last; el.sid.value = s.sid;
+}
+
+async function lookupRoster(id) {
+  fillFromRoster({ first: '', last: '', sid: '' });
+  if (id.length !== 13) { lookup = { id, state: 'idle' }; return; }
+  lookup = { id, state: 'checking' };
+  touched.add('id');
+  showErrors(false);
+  let state = 'error', student = null;
+  try {
+    const r = await callScript({ action: 'lookup', id });
+    state = r.found ? 'found' : 'missing';
+    student = r;
+  } catch (e) {
+    console.error(e);
+  }
+  if (lookup.id !== id) return; // นักเรียนแก้เลขไปแล้วระหว่างรอคำตอบ
+  lookup = { id, state };
+  if (state === 'found') fillFromRoster(student);
+  render();
+  showErrors(false);
+}
+
 let lastSent = '';
 
 // 'off' = ยังไม่ได้ตั้ง uploadUrl, 'sent' = ส่งสำเร็จ (รวมถึงข้อมูลชุดเดิมที่เพิ่งส่งไปแล้ว)
@@ -322,15 +380,7 @@ async function sendCopies(v, pdf) {
   const sig = JSON.stringify(v);
   if (sig === lastSent) return 'sent';
   const docx = await makeDocx(v);
-  // text/plain เพื่อไม่ให้เบราว์เซอร์ส่ง preflight ซึ่ง Apps Script ไม่รองรับ
-  const res = await fetch(C.uploadUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ no: v.no, first: v.first, last: v.last, pdf: toBase64(pdf), docx: toBase64(docx) }),
-    signal: AbortSignal.timeout(90000),
-  });
-  const reply = await res.json();
-  if (!reply.ok) throw new Error(reply.error || 'upload failed');
+  await callScript({ no: v.no, id: v.id, pdf: toBase64(pdf), docx: toBase64(docx) });
   lastSent = sig;
   return 'sent';
 }

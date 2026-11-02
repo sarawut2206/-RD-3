@@ -1,19 +1,28 @@
-// รับไฟล์ PDF และ Word จากหน้าเว็บ แล้วเก็บลงโฟลเดอร์ Drive แยกตามลำดับเลขที่
-// วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วใส่รหัสโฟลเดอร์ด้านล่าง (ดูขั้นตอนใน README)
+// ตรวจรายชื่อ นศท. จาก Google Sheet ส่วนตัว และเก็บไฟล์ PDF กับ Word ลงโฟลเดอร์ Drive แยกตามลำดับเลขที่
+// วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วใส่รหัสสองบรรทัดด้านล่าง (ดูขั้นตอนใน README)
 const FOLDER_ID = 'ใส่รหัสโฟลเดอร์ที่นี่';
+const ROSTER_SHEET_ID = 'ใส่รหัส Google Sheet รายชื่อที่นี่';
 
 const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function doGet() {
-  return reply_({ ok: true, service: 'nsd-certificate' });
+  return reply_({ ok: true, service: 'nsd-certificate', students: Object.keys(loadRoster_()).length });
 }
 
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    const student = loadRoster_()[parseId_(d.id)];
+
+    if (d.action === 'lookup') {
+      if (!student) return reply_({ ok: true, found: false });
+      return reply_({ ok: true, found: true, first: student.first, last: student.last, sid: student.sid });
+    }
+
+    if (!student) throw new Error('not in roster');
     const no = parseNo_(d.no);
-    const label = no + ' ' + parseName_(d.first) + ' ' + parseName_(d.last);
+    const label = no + ' ' + student.first + ' ' + student.last;
     const pdf = decode_(d.pdf, '%PDF');
     const docx = decode_(d.docx, 'PK');
 
@@ -33,16 +42,54 @@ function doPost(e) {
   }
 }
 
+// อ่านทุกแท็บ หาแถวหัวตารางจากชื่อคอลัมน์ จึงเพิ่มรายชื่อชุดใหม่เป็นแท็บใหม่ได้
+function loadRoster_() {
+  const roster = {};
+  SpreadsheetApp.openById(ROSTER_SHEET_ID).getSheets().forEach(function (sheet) {
+    let cols = null;
+    sheet.getDataRange().getValues().forEach(function (row) {
+      if (!cols) { cols = headerColumns_(row); return; }
+      const id = digits_(row[cols.id]);
+      const sid = digits_(row[cols.sid]);
+      const name = splitName_(row[cols.name]);
+      if (id.length === 13 && sid && name) roster[id] = { first: name.first, last: name.last, sid: sid };
+    });
+  });
+  return roster;
+}
+
+function headerColumns_(row) {
+  const find = function (re) { return row.findIndex(function (c) { return re.test(String(c)); }); };
+  const cols = { id: find(/ประชาชน/), sid: find(/นศท/), name: find(/ชื่อ/) };
+  return cols.id >= 0 && cols.sid >= 0 && cols.name >= 0 ? cols : null;
+}
+
+function digits_(v) {
+  return String(v == null ? '' : v)
+    .replace(/[๐-๙]/g, function (c) { return String(c.charCodeAt(0) - 0x0E50); })
+    .replace(/\D/g, '');
+}
+
+// "นศท.ชื่อ นามสกุล" -> { first, last }
+function splitName_(v) {
+  const parts = String(v == null ? '' : v)
+    .replace(/ /g, ' ')
+    .replace(/^\s*(นศท\.?|นาย|นางสาว|นาง)\s*/, '')
+    .trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0]) return null;
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+
+function parseId_(v) {
+  const s = digits_(v);
+  if (s.length !== 13) throw new Error('invalid id');
+  return s;
+}
+
 function parseNo_(v) {
   const s = String(v == null ? '' : v);
   if (!/^\d{1,3}$/.test(s) || Number(s) < 1) throw new Error('invalid number');
   return ('00' + Number(s)).slice(-3); // 022 เพื่อให้ Drive เรียงตามเลขที่
-}
-
-function parseName_(v) {
-  const s = String(v == null ? '' : v).trim();
-  if (!s || s.length > 40 || !/^[ก-๎ a-zA-Z.\-]+$/.test(s)) throw new Error('invalid name');
-  return s;
 }
 
 function decode_(b64, magic) {
