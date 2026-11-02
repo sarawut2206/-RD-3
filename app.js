@@ -148,8 +148,9 @@ function showErrors(showAll) {
 /* ---------- เนื้อความหนังสือ ---------- */
 // ข้อความตายตัว: ช่องว่างคงไว้ตามต้นฉบับทุกตัว, "|" = จุดที่ตัดบรรทัดได้
 // ช่องที่นักเรียนกรอก = [คีย์, ค่า, ตัวอย่างสีเทา]
-// คืน [บรรทัดแรก, ส่วนที่เหลือ]: ไฟล์ต้นฉบับขึ้นบรรทัดใหม่ด้วยมือหลัง "ลำดับใน" ทำให้ท้ายบรรทัดตรงตามฟอร์มทุกคน
-function bodySegments(v) {
+// คืน 5 บรรทัด ตามแบบฟอร์มต้นฉบับ: ทุกคนขึ้นบรรทัดที่คำเดียวกัน (ลำดับใน / นักศึกษา / ชั้นปีที่ ๓ / ปีที่ ๖ / จริง)
+// flowing = ชื่อยาวจนบรรทัดใดบรรทัดหนึ่งล้น ให้ไหลต่อกันแทน (จึงต้องมีช่องว่างท้ายบรรทัดครบตามต้นฉบับ)
+function bodySegments(v, flowing) {
   const t = toThai;
   return [[
     '      หนังสือ|รับรอง|ฉบับ|นี้|ให้|ไว้|เพื่อ|แสดง|ว่า นัก|ศึกษา|วิชา|ทหาร ',
@@ -162,7 +163,9 @@ function bodySegments(v) {
     ['no', v.no && t(v.no), PLACEHOLDER.no],
     '  หมายเลข|ประจำ|ตัว|ประชาชน ',
     ['id', v.id && t(groupId(v.id)), PLACEHOLDER.id],
-    ' หมายเลข|ประจำ|ตัว|นัก|ศึกษา|วิชา|ทหาร ',
+    ' หมายเลข|ประจำ|ตัว|นัก|ศึกษา',
+  ], [
+    'วิชา|ทหาร ',
     ['sid', v.sid && t(v.sid), PLACEHOLDER.sid],
     ' เกิด|วัน|ที่ ',
     ['day', v.day && t(v.day), PLACEHOLDER.day],
@@ -170,8 +173,11 @@ function bodySegments(v) {
     ['month', v.month && MONTHS[v.month - 1], PLACEHOLDER.month],
     ' พ.ศ.',
     ['year', v.year && t(v.year), PLACEHOLDER.year],
-    `  เป็น|นัก|ศึกษา|วิชา|ทหาร ชั้น|ปี|ที่ ${t(C.trainingYear)}      ของ|สถาน|ศึกษา|วิชา|ทหาร  โรงเรียน|${C.school} ` +
-    `ปัจจุบัน|กำลัง|ศึกษา|อยู่|ใน|ระดับ|ชั้น|มัธยม|ศึกษา|ปี|ที่  ${t(C.gradeLevel)}   ` +
+    `  เป็น|นัก|ศึกษา|วิชา|ทหาร ชั้น|ปี|ที่ ${t(C.trainingYear)}${flowing ? '      ' : ''}`,
+  ], [
+    `ของ|สถาน|ศึกษา|วิชา|ทหาร  โรงเรียน|${C.school} ` +
+    `ปัจจุบัน|กำลัง|ศึกษา|อยู่|ใน|ระดับ|ชั้น|มัธยม|ศึกษา|ปี|ที่  ${t(C.gradeLevel)}${flowing ? '   ' : ''}`,
+  ], [
     `ประจำ ปี|การ|ศึกษา ${t(C.academicYear)} จริง`,
   ]];
 }
@@ -206,23 +212,29 @@ function words(str) {
   return f;
 }
 
-function render() {
+function buildBody(flowing) {
   const body = $('pBody');
-  const [line1, rest] = bodySegments(read()).map((segs, i) => {
+  body.classList.toggle('flowing', flowing);
+  const lines = bodySegments(read(), flowing).map((segs, i, all) => {
     const line = document.createElement('span');
-    line.className = i ? 'rest' : 'line1';
+    line.className = i === all.length - 1 ? 'ln last' : 'ln';
     line.append(...segs.map((seg, j) => {
       if (typeof seg !== 'string') return field(seg[1], seg[0], seg[2]);
       // ช่องว่าง 6 ตัวต้นย่อหน้าอยู่ใน text-indent แล้ว (ไม่ให้ถูกยืดตอนจัดชิดขอบ) ส่วนไฟล์ Word ยังใช้ช่องว่างจริง
       return words(i === 0 && j === 0 ? seg.trimStart() : seg);
     }));
+    if (i < all.length - 1) line.append(document.createElement('wbr')); // ตอนไหลต่อกัน ตัดบรรทัดตรงรอยต่อได้
     return line;
   });
-  line1.append(document.createElement('wbr'));
-  body.classList.remove('flowing');
-  body.replaceChildren(line1, rest);
-  // ชื่อยาวจนล้นบรรทัดแรก: ถ้ายังขึ้นบรรทัดใหม่หลัง "ลำดับใน" Word จะยืด "ใน" เต็มบรรทัด จึงให้ไหลต่อกันแทน
-  if (line1.offsetHeight > parseFloat(getComputedStyle(body).lineHeight) * 1.5) body.classList.add('flowing');
+  body.replaceChildren(...lines);
+}
+
+function render() {
+  const body = $('pBody');
+  buildBody(false);
+  // ปกติ 5 บรรทัดตามฟอร์ม ถ้าชื่อยาวจนบรรทัดใดล้น (ต้องขึ้นบรรทัดเพิ่ม) ให้ไหลต่อกันแทนการบังคับ
+  const lh = parseFloat(getComputedStyle(body).lineHeight);
+  if ([...body.querySelectorAll('.ln')].some((l) => l.offsetHeight > lh * 1.5)) buildBody(true);
   distribute();
 }
 
@@ -261,11 +273,11 @@ function spreadLines(body, all) {
   };
   const before = all.length ? linesOf(body).length : 0;
 
-  [...(flowing ? [body] : body.querySelectorAll('.line1, .rest'))].forEach((block) => {
+  [...(flowing ? [body] : body.querySelectorAll('.ln'))].forEach((block) => {
     const right = block.getBoundingClientRect().right;
     const lines = linesOf(block);
     lines.forEach((ln, i) => {
-      if (i === lines.length - 1 && (flowing || block.classList.contains('rest'))) return; // บรรทัดสุดท้ายของย่อหน้าไม่ต้องเต็ม
+      if (i === lines.length - 1 && (flowing || block.classList.contains('last'))) return; // บรรทัดสุดท้ายของย่อหน้าไม่ต้องเต็ม
       while (ln.els.length && ln.els[ln.els.length - 1].e.classList.contains('sp')) ln.els.pop(); // ช่องว่างท้ายบรรทัดไม่นับ
       if (ln.els.length < 2) return;
       const slack = (right - ln.els[ln.els.length - 1].r.right) / scale - 0.6;
@@ -415,11 +427,13 @@ async function makeDocx(v) {
   if (!res.ok) throw new Error(`template ${res.status}`);
   const zip = await JSZip.loadAsync(await res.arrayBuffer());
   const xml = await zip.file('word/document.xml').async('string');
-  const [bodyA, bodyB] = bodySegments(v).map((segs) =>
-    segs.map((seg) => (typeof seg === 'string' ? seg.replaceAll('|', '') : seg[1])).join(''));
-  const values = { ...FIXED, bodyA, bodyB };
   const flowing = $('pBody').classList.contains('flowing');
-  const filled = (flowing ? xml.replace(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:br\/><\/w:r>/, '') : xml)
+  const values = { ...FIXED };
+  bodySegments(v, flowing).forEach((segs, i) => {
+    values[`l${i + 1}`] = segs.map((seg) => (typeof seg === 'string' ? seg.replaceAll('|', '') : seg[1])).join('');
+  });
+  // แบบ Word ขึ้นบรรทัดใหม่ 4 จุดตามฟอร์ม ถ้าชื่อยาวจนต้องไหลต่อกัน ให้ลบจุดขึ้นบรรทัดออก
+  const filled = (flowing ? xml.replace(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:br\/><\/w:r>/g, '') : xml)
     .replace(/\{\{(\w+)\}\}/g, (_, k) => escapeXml(values[k]));
   zip.file('word/document.xml', filled);
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });

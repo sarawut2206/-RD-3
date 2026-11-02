@@ -185,12 +185,14 @@ button:disabled { opacity: .6; cursor: progress; }
 .paper .empty { height: 19.5pt; }
 .paper .body { text-align: justify; }  /* ช่องว่างระหว่างตัวอักษรเติมด้วย JS (distribute ใน app.js) */
 .paper .sp { white-space: pre-wrap; }
-.paper .measuring, .paper .measuring .line1 { text-align: left !important; text-align-last: left !important; }
+.paper .measuring, .paper .measuring .ln { text-align: left !important; text-align-last: left !important; }
+/* เนื้อความ 5 บรรทัดตามฟอร์ม แต่ละบรรทัดชิดสองขอบ (บรรทัดสุดท้ายไม่ชิด) */
+.paper .ln { display: block; text-align-last: justify; }
+.paper .ln.last { text-align-last: left; }
 /* ย่อหน้า 36pt + ช่องว่าง 6 ตัวของต้นฉบับ (ตัวละ 0.216em) */
-.paper .line1 { display: block; text-indent: 56.74pt; text-align-last: justify; }
-.paper .rest { display: block; }
+.paper .ln:first-child { text-indent: 56.74pt; }
 .paper .flowing { text-indent: 56.74pt; }
-.paper .flowing .line1, .paper .flowing .rest { display: inline; }
+.paper .flowing .ln { display: inline; }
 .paper .date { text-align: center; padding-left: 36pt; }
 .paper .sign1 { padding-left: 144pt; }
 .paper .sign2 { text-align: center; padding-left: 60.1pt; }
