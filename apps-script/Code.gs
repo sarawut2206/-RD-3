@@ -8,7 +8,13 @@
 const FOLDER_ID = '';
 const ROSTER_SHEET_ID = '';
 
+// รหัสครู สำหรับหน้า "สำหรับครู" บนเว็บ (นำเข้ารายชื่อ) ตั้งเองตรงนี้ อย่างน้อย 6 ตัวอักษร และห้ามใส่ลงใน GitHub
+// ถ้าเว้นว่างไว้ หน้าสำหรับครูจะใช้ไม่ได้
+const ADMIN_PIN = '';
+
 const FOLDER_NAME = 'นำปลด 2569';
+const ROSTER_SHEET_TITLE = 'รายชื่อ นศท. (ระบบนำเข้า)';
+const MAX_ROSTER_ROWS = 800;
 const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const CACHE_SECONDS = 20;
@@ -24,6 +30,10 @@ function doGet() {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+
+    // หน้าสำหรับครู (ต้องมีรหัสครู) ทำก่อนอ่านรายชื่อ เพราะใช้นำเข้ารายชื่อตอนที่ยังไม่มีรายชื่อได้
+    if (d.action === 'adminInfo') { requireAdmin_(d.pin); return reply_(adminInfo_()); }
+    if (d.action === 'adminImport') { requireAdmin_(d.pin); return reply_(importRoster_(d)); }
 
     // รายชื่อให้นักเรียนกดเลือก + ใครส่งแล้ว: ส่งเฉพาะชื่อ ไม่ส่งเลขบัตรหรือเลข นศท.
     if (d.action === 'list') return reply_(listPayload_());
@@ -92,7 +102,8 @@ function rootFolder_() {
 
 // หาชีตรายชื่อจากหัวตาราง (มีคอลัมน์ นศท / ประชาชน / ชื่อ) ไม่พึ่งชื่อไฟล์ ดูเฉพาะ Google ชีตที่แก้ไขใน 45 วันล่าสุด
 function rosterSheetId_() {
-  return resolve_(ROSTER_SHEET_ID, 'sheetId', function () {
+  const imported = PropertiesService.getScriptProperties().getProperty('rosterSheetId') || '';
+  return resolve_(ROSTER_SHEET_ID || imported, 'sheetId', function () {
     const since = Utilities.formatDate(new Date(Date.now() - 45 * 86400000), 'UTC', "yyyy-MM-dd'T'HH:mm:ss");
     const it = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false and modifiedDate > '" + since + "'");
     const found = [];
@@ -106,6 +117,98 @@ function rosterSheetId_() {
     }
     return found;
   }, 'Google ชีตรายชื่อ นศท. (ดูจากหัวตาราง และต้องแก้ไขภายใน 45 วัน ถ้ายังเป็นไฟล์ .xlsx ให้แปลงเป็น Google ชีตก่อน)');
+}
+
+/* ---------- หน้าสำหรับครู: นำเข้ารายชื่อ ---------- */
+
+function requireAdmin_(pin) {
+  if (!ADMIN_PIN || ADMIN_PIN.length < 6) throw new Error('ยังไม่ได้ตั้งรหัสครู: แก้บรรทัด ADMIN_PIN ใน Code.gs (อย่างน้อย 6 ตัวอักษร) แล้วทำให้ใช้งานได้เป็นเวอร์ชันใหม่');
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('pinFails') || 0);
+  if (fails >= 5) throw new Error('ใส่รหัสผิดหลายครั้ง ระบบล็อก 10 นาที แล้วลองใหม่');
+  if (String(pin == null ? '' : pin) !== ADMIN_PIN) {
+    cache.put('pinFails', String(fails + 1), 600);
+    throw new Error('รหัสครูไม่ถูกต้อง');
+  }
+  cache.remove('pinFails');
+}
+
+function existingRosterBook_() {
+  try {
+    return SpreadsheetApp.openById(rosterSheetId_());
+  } catch (err) {
+    return null; // ยังไม่มีชีตรายชื่อ
+  }
+}
+
+function sheetRows_(sheet) {
+  const out = [];
+  let cols = null;
+  sheet.getDataRange().getValues().forEach(function (row) {
+    if (!cols) { cols = headerColumns_(row); return; }
+    if (digits_(row[cols.id]).length === 13 && digits_(row[cols.sid]) && splitName_(row[cols.name])) out.push(row);
+  });
+  return cols ? out.length : -1; // -1 = แท็บนี้ไม่มีหัวตารางรายชื่อ
+}
+
+function adminInfo_() {
+  const book = existingRosterBook_();
+  const info = { ok: true, tabs: [], total: 0, sheetUrl: '', sent: null };
+  if (book) {
+    info.sheetUrl = book.getUrl();
+    book.getSheets().forEach(function (sheet) {
+      const n = sheetRows_(sheet);
+      if (n >= 0) { info.tabs.push({ name: sheet.getName(), count: n }); info.total += n; }
+    });
+  }
+  try {
+    info.sent = listPayload_().list.filter(function (p) { return p.done; }).length;
+  } catch (err) { /* ยังไม่มีรายชื่อหรือโฟลเดอร์ */ }
+  return info;
+}
+
+// รับรายการ [{ sid, id, name }] จากหน้าเว็บ ตรวจซ้ำฝั่งนี้ทุกแถว แล้วเขียนทับแท็บชื่อ label ในชีตรายชื่อ (สร้างชีตให้ถ้ายังไม่มี)
+function importRoster_(d) {
+  const label = String(d.label == null ? '' : d.label).trim();
+  if (!label || label.length > 30 || /[\[\]*?:\/\\]/.test(label)) throw new Error('ชื่อชุดรายชื่อไม่ถูกต้อง (1-30 ตัวอักษร ห้ามมี [ ] * ? : / \\)');
+  const items = d.items;
+  if (!Array.isArray(items) || !items.length) throw new Error('ไม่มีรายชื่อให้นำเข้า');
+  if (items.length > MAX_ROSTER_ROWS) throw new Error('รายชื่อมากเกินไป (สูงสุด ' + MAX_ROSTER_ROWS + ' คน)');
+
+  const seen = {};
+  const rows = items.map(function (it, i) {
+    const sid = digits_(it && it.sid), id = digits_(it && it.id), name = String((it && it.name) || '').replace(/\s+/g, ' ').trim();
+    if (!/^\d{1,12}$/.test(sid)) throw new Error('แถวที่ ' + (i + 1) + ': เลข นศท. ไม่ถูกต้อง');
+    if (!/^\d{13}$/.test(id)) throw new Error('แถวที่ ' + (i + 1) + ': เลขประจำตัวประชาชนต้องมี 13 หลัก');
+    if (!/^[฀-๿ a-zA-Z.\-]{3,80}$/.test(name) || !splitName_(name)) throw new Error('แถวที่ ' + (i + 1) + ': ชื่อ-สกุลไม่ถูกต้อง');
+    if (seen[id]) throw new Error('แถวที่ ' + (i + 1) + ': เลขประจำตัวประชาชนซ้ำกับแถวที่ ' + seen[id]);
+    seen[id] = i + 1;
+    return [sid, id, name];
+  });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let book = existingRosterBook_();
+    if (!book) {
+      book = SpreadsheetApp.create(ROSTER_SHEET_TITLE);
+      PropertiesService.getScriptProperties().setProperty('rosterSheetId', book.getId());
+      CacheService.getScriptCache().put('sheetId', book.getId(), 21600);
+    }
+    let sheet = book.getSheetByName(label);
+    if (!sheet) {
+      const only = book.getSheets();
+      sheet = only.length === 1 && only[0].getLastRow() === 0 ? only[0].setName(label) : book.insertSheet(label);
+    }
+    sheet.clear();
+    const all = [['เลขประจำตัว นศท.', 'เลขประจำตัวประชาชน', 'ชื่อ - สกุล']].concat(rows);
+    sheet.getRange(1, 1, all.length, 3).setNumberFormat('@').setValues(all); // เป็นข้อความ เพื่อไม่ให้เลขนำหน้า 0 หาย
+    sheet.setFrozenRows(1);
+  } finally {
+    lock.releaseLock();
+  }
+  CacheService.getScriptCache().remove('list');
+  return Object.assign(adminInfo_(), { imported: rows.length, tab: label });
 }
 
 /* ---------- บัญชีรายชื่อ ---------- */

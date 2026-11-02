@@ -77,6 +77,27 @@ input[readonly] { background: #f1f4f8; }
 .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .count { font-weight: 400; opacity: .85; }
 
+/* ---------- สำหรับครู ---------- */
+.tabs button.teacher { flex: 0 1 160px; margin-left: auto; }
+.admin-panel { margin: 20px auto 40px; max-width: 760px; }
+.admin-login label { display: block; font-weight: 700; margin-bottom: 4px; }
+.admin-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; margin: 14px 0; }
+.admin-card h3 { margin: 0 0 6px; font-size: 1.15rem; }
+.admin-card .hint { font-size: 1rem !important; margin: 4px 0 10px; }
+.admin-card .big { margin: 4px 0; font-size: 1.2rem; }
+.admin-card .big b { font-size: 1.8rem; color: var(--accent); }
+.admin-tabs { margin: 6px 0; padding-left: 1.2em; }
+textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; resize: vertical; }
+input[type="file"] { padding: 8px; }
+.imp-preview { margin: 10px 0; font-size: 1rem; }
+.imp-preview .ok { color: #1b5e20; font-weight: 700; }
+.imp-preview .bad { color: var(--bad); }
+.imp-preview .warn { color: var(--warn); }
+.imp-preview ul { margin: 4px 0; padding-left: 1.2em; }
+.imp-preview table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 1rem; }
+.imp-preview th, .imp-preview td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+.imp-preview th { background: #f1f4f8; }
+
 /* ---------- สรุปใครกรอกแล้ว ---------- */
 .status-panel { margin: 20px auto 40px; max-width: 760px; }
 .status-panel .big { margin: 6px 0 8px; font-size: 1.3rem; }
@@ -172,7 +193,7 @@ button:disabled { opacity: .6; cursor: progress; }
 @page { size: A4; margin: 0; }
 @media print {
   html, body { background: #fff; }
-  .top, .panel, .tabs, #viewStatus { display: none !important; }
+  .top, .panel, .tabs, #viewStatus, #viewAdmin { display: none !important; }
   .wrap, .layout { display: block; max-width: none; margin: 0; padding: 0; }
   .stage { position: static; }
   .stage-box { width: 210mm; height: 297mm; box-shadow: none; margin: 0; }

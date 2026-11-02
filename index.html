@@ -24,6 +24,7 @@
   <div class="wrap">
     <button type="button" data-view="form" aria-pressed="true">ออกหนังสือ</button>
     <button type="button" data-view="status" aria-pressed="false">ใครกรอกแล้วบ้าง <span class="count" id="tabCount"></span></button>
+    <button type="button" data-view="admin" aria-pressed="false" class="teacher">สำหรับครู</button>
   </div>
 </nav>
 
@@ -148,6 +149,52 @@
     </div>
     <p class="hint" id="statusHint"></p>
     <ol class="status-list" id="statusList"></ol>
+  </section>
+</main>
+
+<main class="wrap" id="viewAdmin" hidden>
+  <section class="panel admin-panel" aria-labelledby="adminTitle">
+    <h2 id="adminTitle">สำหรับครู: นำเข้ารายชื่อ</h2>
+
+    <form id="adminLogin" class="admin-login" autocomplete="off">
+      <label for="adminPin">รหัสครู</label>
+      <div class="pick-search">
+        <input id="adminPin" type="password" autocomplete="off" placeholder="รหัสที่ตั้งไว้ใน Apps Script (ADMIN_PIN)">
+        <button type="submit" class="primary" id="btnAdminLogin">เข้าสู่ระบบ</button>
+      </div>
+      <p class="msg" id="adminLoginMsg" role="alert"></p>
+    </form>
+
+    <div id="adminBody" hidden>
+      <div class="admin-card">
+        <h3>รายชื่อในระบบตอนนี้</h3>
+        <p class="big"><b id="admTotal">0</b> <span>คน</span> <span class="pct" id="admSent"></span></p>
+        <ul class="admin-tabs" id="admTabs"></ul>
+        <p class="hint"><a id="admSheetLink" href="#" target="_blank" rel="noopener" hidden>เปิดชีตรายชื่อใน Google ชีต</a></p>
+      </div>
+
+      <div class="admin-card">
+        <h3>นำเข้ารายชื่อ</h3>
+        <p class="hint">ไฟล์ต้องมีแถวหัวตารางที่มีคำว่า "นศท", "ประชาชน" และ "ชื่อ" (ลำดับคอลัมน์อะไรก็ได้) ใช้ไฟล์ .xlsx หรือ .csv หรือคัดลอกจาก Excel มาวาง ถ้าชื่อชุดซ้ำกับที่มีอยู่ จะถูกแทนที่ทั้งชุด</p>
+        <div class="field">
+          <label for="impLabel">ชื่อชุดรายชื่อ</label>
+          <input id="impLabel" type="text" maxlength="30" placeholder="เช่น ปี 3 ชาย" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="impFile">เลือกไฟล์</label>
+          <input id="impFile" type="file" accept=".xlsx,.csv,.txt">
+        </div>
+        <div class="field">
+          <label for="impText">หรือวางข้อมูลที่คัดลอกจาก Excel (รวมแถวหัวตาราง)</label>
+          <textarea id="impText" rows="4" spellcheck="false"></textarea>
+        </div>
+        <div id="impPreview" class="imp-preview" aria-live="polite"></div>
+        <div class="actions">
+          <button type="button" id="btnImport" class="primary" disabled>นำเข้ารายชื่อ</button>
+        </div>
+        <p class="status" id="impStatus" role="status" aria-live="polite"></p>
+      </div>
+    </div>
   </section>
 </main>
 

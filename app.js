@@ -132,7 +132,7 @@ function validate(v) {
 const touched = new Set();
 function showErrors(showAll) {
   const { err, warn } = validate(read());
-  document.querySelectorAll('.field').forEach((f) => {
+  document.querySelectorAll('.field[data-f]').forEach((f) => {
     const k = f.dataset.f;
     const on = showAll || touched.has(k);
     const m = on ? (err[k] || warn[k] || '') : '';
@@ -505,6 +505,7 @@ function renderStatus() {
 function showView(name) {
   $('viewForm').hidden = name !== 'form';
   $('viewStatus').hidden = name !== 'status';
+  $('viewAdmin').hidden = name !== 'admin';
   document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
   if (name === 'status') loadPeople(true);
 }
@@ -518,6 +519,220 @@ statusSearch.addEventListener('input', renderStatus);
 $('btnRefresh').addEventListener('click', () => loadPeople(true));
 setInterval(() => { if (ROSTER && !$('viewStatus').hidden && !document.hidden) loadPeople(true); }, 60000);
 if (ROSTER) $('tabs').hidden = false;
+
+/* ---------- สำหรับครู: นำเข้ารายชื่อ (ต้องใส่รหัสครู) ---------- */
+const admin = { pin: '', items: [] };
+
+const adminCall = (action, extra) => callScript({ action, pin: admin.pin, ...extra });
+const maskId = (id) => `${id[0]} xxxx xxxxx xx ${id[12]}`;
+const HEADER_RE = { id: /ประชาชน/, sid: /นศท/, name: /ชื่อ/ };
+
+function headerCols(row) {
+  const find = (re) => row.findIndex((c) => re.test(String(c ?? '')));
+  const cols = { id: find(HEADER_RE.id), sid: find(HEADER_RE.sid), name: find(HEADER_RE.name) };
+  return cols.id >= 0 && cols.sid >= 0 && cols.name >= 0 ? cols : null;
+}
+
+const colIndex = (ref) => [...ref.replace(/\d/g, '')].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+const numText = (s) => (/e/i.test(s) ? Number(s).toLocaleString('fullwide', { useGrouping: false }) : s);
+
+// อ่านไฟล์ .xlsx ด้วย JSZip (ไม่ต้องพึ่งไลบรารีอื่น) คืนอาร์เรย์ของแท็บ แต่ละแท็บเป็นอาร์เรย์ของแถว
+async function readXlsx(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  const parse = (s) => new DOMParser().parseFromString(s, 'application/xml');
+  const ss = zip.file('xl/sharedStrings.xml');
+  const shared = ss
+    ? [...parse(await ss.async('string')).getElementsByTagName('si')].map((si) => [...si.getElementsByTagName('t')].map((t) => t.textContent).join(''))
+    : [];
+  const names = Object.keys(zip.files)
+    .filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const sheets = [];
+  for (const name of names) {
+    const rows = [];
+    for (const row of parse(await zip.file(name).async('string')).getElementsByTagName('row')) {
+      const cells = [];
+      for (const c of row.getElementsByTagName('c')) {
+        const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+        let val = '';
+        if (t === 'inlineStr') val = [...c.getElementsByTagName('t')].map((x) => x.textContent).join('');
+        else if (v) val = t === 's' ? (shared[Number(v.textContent)] ?? '') : t === 'str' ? v.textContent : numText(v.textContent);
+        cells[colIndex(c.getAttribute('r'))] = val;
+      }
+      rows.push(Array.from(cells, (x) => x ?? ''));
+    }
+    sheets.push(rows);
+  }
+  return sheets;
+}
+
+// CSV หรือข้อความที่คัดลอกมาจาก Excel (คั่นด้วยแท็บ)
+function parseDelimited(text) {
+  const d = text.includes('\t') ? '\t' : ',';
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === d) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  row.push(cell); rows.push(row);
+  return [rows.filter((r) => r.some((c) => c.trim()))];
+}
+
+const NAME_OK = /^[ก-๛ a-zA-Z.\-]{3,80}$/;
+function nameOk(raw) {
+  const name = squash(String(raw ?? '').replace(/ /g, ' '));
+  const parts = name.replace(/^(นศท\.?|นาย|นางสาว|นาง)\s*/, '').split(' ').filter(Boolean);
+  return NAME_OK.test(name) && parts.length >= 2 ? name : '';
+}
+
+// ตรวจรายชื่อก่อนนำเข้า: แถวที่มีปัญหาต้องแก้ที่ไฟล์ต้นทางก่อน (เลขบัตรไม่ผ่านหลักตรวจเป็นเพียงคำเตือน)
+function analyzeRoster(sheets) {
+  for (const rows of sheets) {
+    const h = rows.slice(0, 20).findIndex((r) => headerCols(r));
+    if (h < 0) continue;
+    const cols = headerCols(rows[h]);
+    const items = [], bad = { id: [], sid: [], name: [], dup: [] }, checksum = [], seen = new Map();
+    rows.slice(h + 1).forEach((r, i) => {
+      const line = h + 2 + i;
+      const id = digitsOnly(String(r[cols.id] ?? '')), sid = digitsOnly(String(r[cols.sid] ?? ''));
+      if (!id && !sid) return; // แถวสรุป/แถวว่าง ไม่ใช่รายชื่อ
+      const name = nameOk(r[cols.name]);
+      let ok = true;
+      if (id.length !== 13) { bad.id.push(line); ok = false; }
+      if (!sid || sid.length > 12) { bad.sid.push(line); ok = false; }
+      if (!name) { bad.name.push(line); ok = false; }
+      if (id.length === 13) {
+        if (seen.has(id)) { bad.dup.push(line); ok = false; } else seen.set(id, line);
+        if (!idChecksumOk(id)) checksum.push(line);
+      }
+      if (ok) items.push({ sid, id, name });
+    });
+    return { found: true, items, bad, checksum, blocked: Object.values(bad).some((a) => a.length) };
+  }
+  return { found: false, items: [], bad: { id: [], sid: [], name: [], dup: [] }, checksum: [], blocked: true };
+}
+
+const lines = (a) => `แถวที่ ${a.slice(0, 8).join(', ')}${a.length > 8 ? ` และอีก ${a.length - 8} แถว` : ''}`;
+
+function renderImportPreview(res) {
+  const box = $('impPreview');
+  box.replaceChildren();
+  const add = (cls, text) => { const p = document.createElement('p'); p.className = cls; p.textContent = text; box.append(p); };
+  admin.items = [];
+  if (!res) { $('btnImport').disabled = true; return; }
+  if (!res.found) {
+    add('bad', 'ไม่พบแถวหัวตาราง ต้องมีคำว่า "นศท", "ประชาชน" และ "ชื่อ" ในแถวเดียวกัน');
+  } else {
+    add(res.items.length ? 'ok' : 'bad', `อ่านรายชื่อได้ ${res.items.length} คน`);
+    if (res.bad.id.length) add('bad', `เลขประจำตัวประชาชนไม่ครบ 13 หลัก: ${lines(res.bad.id)}`);
+    if (res.bad.sid.length) add('bad', `เลข นศท. ว่างหรือผิดรูปแบบ: ${lines(res.bad.sid)}`);
+    if (res.bad.name.length) add('bad', `ชื่อ-สกุลว่างหรือผิดรูปแบบ (ต้องมีชื่อและนามสกุล): ${lines(res.bad.name)}`);
+    if (res.bad.dup.length) add('bad', `เลขประจำตัวประชาชนซ้ำ: ${lines(res.bad.dup)}`);
+    if (res.checksum.length) add('warn', `เลขบัตรไม่ผ่านการตรวจหลักสุดท้าย (นำเข้าได้ แต่ควรเช็กกับต้นฉบับ): ${lines(res.checksum)}`);
+    if (res.blocked) add('bad', 'ยังนำเข้าไม่ได้ กรุณาแก้ไฟล์ต้นทางแล้วเลือกไฟล์ใหม่');
+    if (res.items.length) {
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>เลข นศท.</th><th>เลขบัตร (ปิดบังบางส่วน)</th><th>ชื่อ-สกุล</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      res.items.slice(0, 5).forEach((it) => {
+        const tr = document.createElement('tr');
+        [it.sid, maskId(it.id), it.name].forEach((v) => { const td = document.createElement('td'); td.textContent = v; tr.append(td); });
+        tb.append(tr);
+      });
+      t.append(tb); box.append(t);
+      if (res.items.length > 5) add('hint', `แสดง 5 คนแรกจากทั้งหมด ${res.items.length} คน`);
+    }
+  }
+  if (res.found && !res.blocked && res.items.length) admin.items = res.items;
+  $('btnImport').disabled = !admin.items.length || !$('impLabel').value.trim();
+}
+
+async function decodeText(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { return new TextDecoder('windows-874').decode(buf); }
+}
+
+async function analyzeInput() {
+  $('impStatus').textContent = '';
+  try {
+    const file = $('impFile').files[0], pasted = $('impText').value.trim();
+    let sheets = null;
+    if (file) sheets = /\.xlsx$/i.test(file.name) ? await readXlsx(await file.arrayBuffer()) : parseDelimited(await decodeText(file));
+    else if (pasted) sheets = parseDelimited(pasted);
+    renderImportPreview(sheets ? analyzeRoster(sheets) : null);
+  } catch (e) {
+    console.error(e);
+    renderImportPreview(null);
+    $('impStatus').textContent = 'อ่านไฟล์ไม่สำเร็จ ลองบันทึกเป็น .xlsx ใหม่ หรือคัดลอกข้อมูลมาวางแทน';
+    $('impStatus').classList.add('bad');
+  }
+}
+
+function renderAdminInfo(info) {
+  $('admTotal').textContent = info.total;
+  $('admSent').textContent = info.sent == null ? '' : `ส่งหนังสือแล้ว ${info.sent} คน`;
+  $('admTabs').replaceChildren(...info.tabs.map((t) => {
+    const li = document.createElement('li');
+    li.textContent = `${t.name} · ${t.count} คน`;
+    return li;
+  }));
+  if (!info.tabs.length) {
+    const li = document.createElement('li'); li.textContent = 'ยังไม่มีรายชื่อ นำเข้าได้ด้านล่าง'; $('admTabs').append(li);
+  }
+  const link = $('admSheetLink');
+  link.hidden = !/^https:\/\/docs\.google\.com\//.test(info.sheetUrl || '');
+  if (!link.hidden) link.href = info.sheetUrl;
+}
+
+$('adminLogin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('adminLoginMsg');
+  msg.textContent = '';
+  admin.pin = $('adminPin').value;
+  $('btnAdminLogin').disabled = true;
+  try {
+    renderAdminInfo(await adminCall('adminInfo'));
+    $('adminBody').hidden = false;
+    $('adminLogin').hidden = true;
+  } catch (err) {
+    admin.pin = '';
+    msg.textContent = /Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err);
+  } finally {
+    $('btnAdminLogin').disabled = false;
+  }
+});
+
+$('impFile').addEventListener('change', () => { if ($('impFile').files[0]) $('impText').value = ''; analyzeInput(); });
+$('impText').addEventListener('input', () => { if ($('impText').value) $('impFile').value = ''; analyzeInput(); });
+$('impLabel').addEventListener('input', () => { $('btnImport').disabled = !admin.items.length || !$('impLabel').value.trim(); });
+
+$('btnImport').addEventListener('click', async () => {
+  const label = $('impLabel').value.trim(), n = admin.items.length;
+  if (!n || !label) return;
+  if (!confirm(`นำเข้า ${n} รายชื่อ เข้าชุด "${label}"\nถ้ามีชุดชื่อนี้อยู่แล้ว จะถูกแทนที่ทั้งชุด ยืนยันหรือไม่?`)) return;
+  const st = $('impStatus');
+  st.classList.remove('bad');
+  st.textContent = 'กำลังนำเข้า…';
+  $('btnImport').disabled = true;
+  try {
+    const info = await adminCall('adminImport', { label, items: admin.items });
+    renderAdminInfo(info);
+    st.textContent = `นำเข้า ${info.imported} รายชื่อเข้าชุด "${info.tab}" เรียบร้อย ตอนนี้นักเรียนค้นหาชื่อได้แล้ว`;
+    $('impFile').value = ''; $('impText').value = '';
+    renderImportPreview(null);
+    loadPeople(true);
+  } catch (err) {
+    st.classList.add('bad');
+    st.textContent = `นำเข้าไม่สำเร็จ: ${String(err.message || err)}`;
+    $('btnImport').disabled = !admin.items.length;
+  }
+});
 
 let lastSent = '';
 
