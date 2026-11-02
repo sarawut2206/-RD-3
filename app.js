@@ -340,8 +340,8 @@ function fontEmbedCss() {
   return fontCssPromise;
 }
 
-// PDF หน้าเดียว A4 ที่มีรูปหนังสือเต็มหน้า (ไม่ต้องพึ่งไลบรารี)
-function makePdf(jpeg, pxW, pxH, title) {
+// PDF A4 ที่แต่ละหน้ามีรูปหนังสือเต็มหน้า (ไม่ต้องพึ่งไลบรารี) images = [{ jpeg, w, h }]
+function makePdfPages(images, title) {
   const W = 595.28, H = 841.89, enc = new TextEncoder();
   const parts = [], offsets = [];
   let len = 0;
@@ -349,24 +349,38 @@ function makePdf(jpeg, pxW, pxH, title) {
   const obj = (n, body) => { offsets[n] = len; add(`${n} 0 obj\n${body}\nendobj\n`); };
   const hex = [...title].map((c) => c.charCodeAt(0).toString(16).padStart(4, '0')).join('');
   const content = `q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
+  const info = 3 + images.length * 3; // วัตถุที่ 1-2 = catalog/pages, แต่ละหน้าใช้ 3 วัตถุ (page, image, content)
 
   add(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-  offsets[4] = len;
-  add(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pxW} /Height ${pxH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
-  add(jpeg); add('\nendstream\nendobj\n');
-  obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  obj(6, `<< /Title <FEFF${hex}> /Producer (nsd-certificate) >>`);
+  obj(2, `<< /Type /Pages /Kids [${images.map((_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${images.length} >>`);
+  images.forEach(({ jpeg, w, h }, i) => {
+    const page = 3 + i * 3, img = page + 1, cont = page + 2;
+    obj(page, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${img} 0 R >> >> /Contents ${cont} 0 R >>`);
+    offsets[img] = len;
+    add(`${img} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+    add(jpeg); add('\nendstream\nendobj\n');
+    obj(cont, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  obj(info, `<< /Title <FEFF${hex}> /Producer (nsd-certificate) >>`);
 
-  const xref = len;
-  add(`xref\n0 7\n0000000000 65535 f \n${offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`);
-  add(`trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  const xref = len, count = info + 1;
+  add(`xref\n0 ${count}\n0000000000 65535 f \n${offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`);
+  add(`trailer\n<< /Size ${count} /Root 1 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF`);
   const out = new Uint8Array(len);
   let o = 0;
   parts.forEach((p) => { out.set(p, o); o += p.length; });
   return out;
+}
+const makePdf = (jpeg, w, h, title) => makePdfPages([{ jpeg, w, h }], title);
+
+// ดึงรูป JPEG ออกจาก PDF ที่เว็บนี้สร้าง (โครงสร้างตายตัว) เพื่อเอาไปรวมเป็นไฟล์เดียว
+function extractJpeg(bytes) {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 4096));
+  const m = /\/Width (\d+) \/Height (\d+)[^>]*\/Filter \/DCTDecode \/Length (\d+) >>\s*stream\r?\n/.exec(head);
+  if (!m) throw new Error('unsupported pdf');
+  const start = m.index + m[0].length;
+  return { w: +m[1], h: +m[2], jpeg: bytes.subarray(start, start + Number(m[3])) };
 }
 
 const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
@@ -652,6 +666,10 @@ const adminCall = (action, extra) => callScript({ action, pin: admin.pin, ...ext
 
 function adminLogout() {
   admin.pin = '';
+  docs = [];
+  $('docsBody').replaceChildren();
+  $('docsSummary').textContent = '';
+  $('docsStatus').textContent = '';
   $('adminBody').hidden = true;
   $('adminLogin').hidden = false;
   $('adminPin').value = '';
@@ -837,6 +855,115 @@ function renderAdminInfo(info) {
   if (!link.hidden) link.href = info.sheetUrl;
 }
 
+/* ---------- สำหรับครู: เอกสารที่นักเรียนส่งมา ดาวน์โหลดทีละคนหรือรวมเป็นไฟล์เดียว ---------- */
+let docs = [];
+const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+function saveFile(bytes, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type }));
+  a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+async function loadDocs() {
+  const st = $('docsStatus');
+  st.classList.remove('bad');
+  st.textContent = 'กำลังโหลดรายการเอกสาร (อาจใช้เวลาครึ่งนาทีถ้ามีเอกสารเยอะ)…';
+  $('btnDocsMerge').disabled = true;
+  try {
+    docs = (await adminCall('adminDocs')).docs.sort((a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : 0)); // เรียงตามเลขที่เสมอ
+    st.textContent = '';
+  } catch (e) {
+    st.classList.add('bad');
+    st.textContent = `โหลดรายการไม่สำเร็จ: ${String(e.message || e)}`;
+    return;
+  }
+  renderDocs();
+}
+
+function renderDocs() {
+  const count = {};
+  docs.forEach((d) => { count[d.no] = (count[d.no] || 0) + 1; });
+  const dup = Object.keys(count).filter((k) => count[k] > 1);
+  $('docsSummary').textContent = docs.length
+    ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}`
+    : 'ยังไม่มีเอกสารที่ส่งเข้ามา';
+  $('btnDocsMerge').disabled = !docs.some((d) => d.pdf);
+  $('docsBody').replaceChildren(...docs.map((d) => {
+    const tr = document.createElement('tr');
+    if (count[d.no] > 1) tr.className = 'dup';
+    const no = document.createElement('td'), nm = document.createElement('td'), act = document.createElement('td');
+    no.textContent = +d.no; nm.textContent = d.name;
+    [['pdf', 'PDF'], ['docx', 'Word']].forEach(([kind, label]) => {
+      if (!d[kind]) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', () => downloadOne(d, kind, b));
+      act.append(b);
+    });
+    tr.append(no, nm, act);
+    return tr;
+  }));
+}
+
+// ขอไฟล์จากสคริปต์ทีละไม่เกิน 6 ไฟล์ (ไฟล์ละ ~0.5 MB เมื่อเป็น base64) คืน Map(id -> { name, bytes })
+async function fetchDriveFiles(ids, onProgress) {
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += 6) {
+    const r = await adminCall('adminFiles', { ids: ids.slice(i, i + 6) });
+    r.files.forEach((f) => out.set(f.id, { name: f.name, bytes: b64ToBytes(f.b64) }));
+    onProgress?.(Math.min(i + 6, ids.length), ids.length);
+  }
+  return out;
+}
+
+async function downloadOne(d, kind, btn) {
+  const st = $('docsStatus');
+  st.classList.remove('bad');
+  btn.disabled = true;
+  st.textContent = `กำลังโหลดไฟล์ของ ${d.name}…`;
+  try {
+    const f = (await fetchDriveFiles([d[kind]])).get(d[kind]);
+    saveFile(f.bytes, f.name, kind === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    st.textContent = `ดาวน์โหลด ${f.name} แล้ว`;
+  } catch (e) {
+    st.classList.add('bad');
+    st.textContent = `โหลดไฟล์ไม่สำเร็จ: ${String(e.message || e)}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// รวม PDF ของทุกคน (หรือช่วงเลขที่) เป็นไฟล์เดียวเรียงตามเลขที่ เพื่อสั่งพิมพ์ครั้งเดียว
+async function mergeDocs() {
+  const st = $('docsStatus'), btn = $('btnDocsMerge');
+  const from = Number($('docFrom').value) || 0, to = Number($('docTo').value) || 999;
+  const picked = docs.filter((d) => d.pdf && +d.no >= from && +d.no <= to);
+  st.classList.remove('bad');
+  if (!picked.length) { st.classList.add('bad'); st.textContent = 'ไม่มีเอกสารในช่วงเลขที่นี้'; return; }
+  btn.disabled = true;
+  try {
+    const files = await fetchDriveFiles(picked.map((d) => d.pdf), (n, total) => { st.textContent = `กำลังรวมไฟล์… ${n}/${total}`; });
+    const images = picked.map((d) => extractJpeg(files.get(d.pdf).bytes));
+    const label = from || to !== 999 ? ` เลขที่ ${+picked[0].no}-${+picked[picked.length - 1].no}` : '';
+    const name = `หนังสือรับรอง นศท. รวม${label}`;
+    saveFile(makePdfPages(images, name), `${name}.pdf`, 'application/pdf');
+    st.textContent = `รวมแล้ว ${picked.length} ฉบับ เรียงตามเลขที่ ${+picked[0].no} ถึง ${+picked[picked.length - 1].no} สั่งพิมพ์จากไฟล์ที่ดาวน์โหลดได้เลย`;
+  } catch (e) {
+    console.error(e);
+    st.classList.add('bad');
+    st.textContent = `รวมไฟล์ไม่สำเร็จ: ${String(e.message || e)}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('btnDocsMerge').addEventListener('click', mergeDocs);
+$('btnDocsReload').addEventListener('click', loadDocs);
+['docFrom', 'docTo'].forEach((id) => $(id).addEventListener('input', () => { $(id).value = digitsOnly($(id).value).slice(0, 3); }));
+
 $('adminLogin').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = $('adminLoginMsg');
@@ -848,6 +975,7 @@ $('adminLogin').addEventListener('submit', async (e) => {
     $('adminBody').hidden = false;
     $('adminLogin').hidden = true;
     renderStatus(); // หน้าสรุปจะมีปุ่มลบให้ครู
+    loadDocs();
   } catch (err) {
     admin.pin = '';
     msg.textContent = /Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err);

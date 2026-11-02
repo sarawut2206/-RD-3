@@ -20,7 +20,7 @@ const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 const CACHE_SECONDS = 20;
 
 // ใช้เช็กว่าลิงก์ /exec รันโค้ดรุ่นไหน: เปิดลิงก์แล้วดูค่า version
-const VERSION = 'admin-import-2';
+const VERSION = 'admin-import-3';
 
 function doGet() {
   try {
@@ -38,6 +38,8 @@ function doPost(e) {
     if (d.action === 'adminInfo') { requireAdmin_(d.pin); return reply_(adminInfo_()); }
     if (d.action === 'adminImport') { requireAdmin_(d.pin); return reply_(importRoster_(d)); }
     if (d.action === 'adminDelete') { requireAdmin_(d.pin); return reply_(deleteSubmission_(d)); }
+    if (d.action === 'adminDocs') { requireAdmin_(d.pin); return reply_({ ok: true, docs: docsList_() }); }
+    if (d.action === 'adminFiles') { requireAdmin_(d.pin); return reply_(filesPayload_(d)); }
 
     // รายชื่อให้นักเรียนกดเลือก + ใครส่งแล้ว: ส่งเฉพาะชื่อ ไม่ส่งเลขบัตรหรือเลข นศท.
     if (d.action === 'list') return reply_(listPayload_());
@@ -213,6 +215,57 @@ function importRoster_(d) {
   }
   CacheService.getScriptCache().remove('list');
   return Object.assign(adminInfo_(), { imported: rows.length, tab: label });
+}
+
+// รายการเอกสารที่นักเรียนส่งมา เรียงตามเลขที่ (โฟลเดอร์ "ลำดับ ชื่อ นามสกุล") เลือกไฟล์ PDF และ Word ล่าสุดของแต่ละโฟลเดอร์
+// ส่งซ้ำจะมีเวลาต่อท้ายชื่อไฟล์ "... (2026-11-02 101500).pdf" ไฟล์ล่าสุดคือไฟล์ที่เวลามากที่สุด (ไฟล์แรกไม่มีเวลา)
+function docsList_() {
+  const rows = [];
+  const it = rootFolder_().getFolders();
+  while (it.hasNext()) {
+    const f = it.next();
+    const m = /^(\d{3}) (.+)$/.exec(f.getName());
+    if (!m) continue;
+    const best = { pdf: null, docx: null };
+    const files = f.getFiles();
+    while (files.hasNext()) {
+      const x = files.next();
+      const name = x.getName();
+      const ext = /\.(pdf|docx)$/i.exec(name);
+      if (!ext) continue;
+      const kind = ext[1].toLowerCase();
+      const stamp = (/\((\d{4}-\d\d-\d\d \d{6})\)\.\w+$/.exec(name) || [])[1] || '';
+      if (!best[kind] || stamp > best[kind].stamp) best[kind] = { id: x.getId(), stamp: stamp };
+    }
+    rows.push({ no: m[1], name: m[2], pdf: best.pdf ? best.pdf.id : '', docx: best.docx ? best.docx.id : '', at: best.pdf ? best.pdf.stamp : '' });
+  }
+  rows.sort(function (a, b) { return a.no < b.no ? -1 : a.no > b.no ? 1 : a.name.localeCompare(b.name); });
+  return rows;
+}
+
+// ส่งเนื้อไฟล์ (base64) ให้หน้าสำหรับครูดาวน์โหลด ครั้งละไม่เกิน 8 ไฟล์ และเฉพาะไฟล์ที่อยู่ในโฟลเดอร์เก็บหนังสือเท่านั้น
+function filesPayload_(d) {
+  const ids = d.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 8) throw new Error('invalid ids');
+  const rootId = rootFolder_().getId();
+  const files = ids.map(function (id) {
+    if (!/^[\w-]{10,80}$/.test(String(id))) throw new Error('invalid id');
+    const file = DriveApp.getFileById(String(id));
+    if (file.isTrashed() || !inRoot_(file, rootId)) throw new Error('file not allowed');
+    return { id: String(id), name: file.getName(), b64: Utilities.base64Encode(file.getBlob().getBytes()) };
+  });
+  return { ok: true, files: files };
+}
+
+function inRoot_(file, rootId) {
+  const parents = file.getParents();
+  while (parents.hasNext()) {
+    const folder = parents.next();
+    if (folder.isTrashed()) continue;
+    const up = folder.getParents();
+    while (up.hasNext()) if (up.next().getId() === rootId) return true;
+  }
+  return false;
 }
 
 // ครูลบข้อมูลที่นักเรียนกรอกผิด: ย้ายโฟลเดอร์ "ลำดับ ชื่อ นามสกุล" ของคนนั้นไปถังขยะใน Drive (กู้คืนได้ 30 วัน)
