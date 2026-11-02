@@ -172,7 +172,9 @@ button:disabled { opacity: .6; cursor: progress; }
 .paper .flow { position: absolute; left: 72pt; top: 289.65pt; width: 445.4pt; }
 .paper .p { margin: 0 0 8pt; min-height: 19.5pt; white-space: pre-wrap; }
 .paper .empty { height: 19.5pt; }
-.paper .body { text-align: justify; }
+.paper .body { text-align: justify; }  /* ช่องว่างระหว่างตัวอักษรเติมด้วย JS (distribute ใน app.js) */
+.paper .sp { white-space: pre-wrap; }
+.paper .measuring, .paper .measuring .line1 { text-align: left !important; text-align-last: left !important; }
 /* ย่อหน้า 36pt + ช่องว่าง 6 ตัวของต้นฉบับ (ตัวละ 0.216em) */
 .paper .line1 { display: block; text-indent: 56.74pt; text-align-last: justify; }
 .paper .rest { display: block; }
@@ -183,7 +185,7 @@ button:disabled { opacity: .6; cursor: progress; }
 .paper .sign2 { text-align: center; padding-left: 60.1pt; }
 .paper .sign3 { text-align: center; padding-left: 42.6pt; }
 .paper .gap { height: 150pt; }
-.paper .u { white-space: pre; }   /* คำที่ห้ามตัดกลางคำ ตัดบรรทัดได้เฉพาะที่ <wbr> หรือช่องว่าง */
+.paper .u { white-space: nowrap; }   /* คำที่ห้ามตัดกลางคำ ตัดบรรทัดได้เฉพาะที่ <wbr> หรือช่องว่าง */
 
 .paper .ph { color: #8a8f98; }
 .paper.show-hl .hl { background: #ffeb3b; }

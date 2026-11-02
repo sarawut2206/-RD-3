@@ -188,7 +188,13 @@ function words(str) {
   const f = document.createDocumentFragment();
   str.split(/( +)/).forEach((tok) => {
     if (!tok) return;
-    if (tok[0] === ' ') { f.append(tok); return; }
+    if (tok[0] === ' ') {
+      const sp = document.createElement('span');
+      sp.className = 'sp';
+      sp.textContent = tok;
+      f.append(sp);
+      return;
+    }
     tok.split('|').forEach((w, i) => {
       if (i) f.append(document.createElement('wbr'));
       const s = document.createElement('span');
@@ -217,6 +223,60 @@ function render() {
   body.replaceChildren(line1, rest);
   // ชื่อยาวจนล้นบรรทัดแรก: ถ้ายังขึ้นบรรทัดใหม่หลัง "ลำดับใน" Word จะยืด "ใน" เต็มบรรทัด จึงให้ไหลต่อกันแทน
   if (line1.offsetHeight > parseFloat(getComputedStyle(body).lineHeight) * 1.5) body.classList.add('flowing');
+  distribute();
+}
+
+/* ---------- กระจายตัวอักษรให้เต็มบรรทัด ---------- */
+// text-justify: inter-character ของเบราว์เซอร์ยังเว้นช่องว่างกว้างตรงเว้นวรรค จึงวัดแต่ละบรรทัดเอง
+// แล้วเพิ่ม letter-spacing ให้ทุกตัวอักษรเท่า ๆ กัน จนพอดีขอบขวา (ผลเหมือนกันทุกเบราว์เซอร์)
+const NEEDS_DISTRIBUTE = true;
+const graphemes = window.Intl && Intl.Segmenter ? new Intl.Segmenter('th', { granularity: 'grapheme' }) : null;
+// Chrome เพิ่ม letter-spacing ต่อ 1 กลุ่มอักษร แต่สระอำ (ำ) นับเป็น 2 ตำแหน่ง
+const countGraphemes = (s) => (graphemes ? [...graphemes.segment(s)].length : s.length) + (s.match(/ำ/g) || []).length;
+
+function distribute() {
+  const body = $('pBody');
+  const all = [...body.querySelectorAll('.u, .sp')];
+  all.forEach((e) => { e.style.letterSpacing = ''; });
+  if (!NEEDS_DISTRIBUTE) return;
+
+  // วัดตอนยังไม่จัดชิดขอบ ไม่เช่นนั้นเบราว์เซอร์ขยายช่องว่างจนเต็มบรรทัดไปก่อนแล้ว จะวัดช่องว่างที่เหลือไม่ได้
+  body.classList.add('measuring');
+  try { spreadLines(body, all); } finally { body.classList.remove('measuring'); }
+}
+
+function spreadLines(body, all) {
+  const scale = body.getBoundingClientRect().width / body.offsetWidth || 1; // พรีวิวถูกย่อด้วย transform
+  const flowing = body.classList.contains('flowing');
+  const linesOf = (block) => {
+    const lines = [];
+    let cur = null;
+    block.querySelectorAll('.u, .sp').forEach((e) => {
+      const r = e.getClientRects()[0];
+      if (!r) return;
+      if (!cur || Math.abs(r.top - cur.top) > 3 * scale) { cur = { top: r.top, els: [] }; lines.push(cur); }
+      cur.els.push({ e, r });
+    });
+    return lines;
+  };
+  const before = all.length ? linesOf(body).length : 0;
+
+  [...(flowing ? [body] : body.querySelectorAll('.line1, .rest'))].forEach((block) => {
+    const right = block.getBoundingClientRect().right;
+    const lines = linesOf(block);
+    lines.forEach((ln, i) => {
+      if (i === lines.length - 1 && (flowing || block.classList.contains('rest'))) return; // บรรทัดสุดท้ายของย่อหน้าไม่ต้องเต็ม
+      while (ln.els.length && ln.els[ln.els.length - 1].e.classList.contains('sp')) ln.els.pop(); // ช่องว่างท้ายบรรทัดไม่นับ
+      if (ln.els.length < 2) return;
+      const slack = (right - ln.els[ln.els.length - 1].r.right) / scale - 0.6;
+      const n = ln.els.reduce((sum, { e }) => sum + countGraphemes(e.textContent), 0);
+      if (slack <= 0 || n < 2) return;
+      const ls = Math.min(slack / (n - 1), 3); // ส่วนที่เกินจากนี้ ให้ text-align: justify เติมที่ช่องว่างต่อ
+      ln.els.forEach(({ e }) => { e.style.letterSpacing = `${ls.toFixed(3)}px`; });
+    });
+  });
+  // กันพลาด: ถ้าการเพิ่มระยะทำให้ตัดบรรทัดเปลี่ยน ให้ยกเลิก กลับไปใช้การจัดชิดขอบแบบเดิม
+  if (all.length && linesOf(body).length !== before) all.forEach((e) => { e.style.letterSpacing = ''; });
 }
 
 /* ---------- ช่องกรอก ---------- */
