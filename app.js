@@ -62,6 +62,7 @@ function applyMode() {
   const locked = fromRoster();
   document.body.classList.toggle('roster', locked);
   document.querySelector('.field.pick').hidden = !ROSTER;
+  document.querySelector('.field.pick').classList.toggle('off', manual);
   [el.first, el.last, el.sid, el.id].forEach((i) => { i.readOnly = locked; });
   el.sid.placeholder = locked ? 'ขึ้นเองเมื่อกดเลือกชื่อ' : '0'.repeat(C.sidLength);
   el.id.placeholder = locked ? 'ขึ้นเองเมื่อกดเลือกชื่อ' : '0 0000 00000 00 0';
