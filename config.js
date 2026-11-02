@@ -18,7 +18,7 @@ window.CONFIG = {
 
   // ลิงก์ Web app จาก Apps Script (ดู README) — ถ้าเว้นว่าง เว็บจะดาวน์โหลดอย่างเดียว ไม่ส่งเข้า Drive
   // เมื่อใส่แล้ว นักเรียนกรอกเลขประจำตัวประชาชน ระบบจะเติมชื่อและเลข นศท. จากบัญชีรายชื่อให้
-  uploadUrl: '',
+  uploadUrl: 'https://script.google.com/macros/s/AKfycbzplqryvtz6mBJBfWxKgNRhWycNYShBPkjN_FPLHu4bWe9i8rT16pVAQhn15HdGrzbc/exec',
 
   sidLength: 10,  // จำนวนหลักของเลขประจำตัวนักศึกษาวิชาทหาร
 

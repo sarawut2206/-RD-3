@@ -51,20 +51,28 @@ $('pSigner').textContent = `( ${FIXED.signer} )`;
 $('pPhone').textContent = `${FIXED.phoneLabel} : ${FIXED.phone}`;
 $('pDate').textContent = FIXED.date;
 
-$('privacy').textContent = ROSTER
-  ? 'ชื่อ เลขประจำตัวประชาชน และเลข นศท. ดึงมาจากบัญชีรายชื่อของครู เมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรองไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
-  : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
-
 $('sidLabel').textContent = `เลขประจำตัวนักศึกษาวิชาทหาร (${C.sidLength} หลัก)`;
-el.sid.placeholder = '0'.repeat(C.sidLength);
 el.sid.maxLength = C.sidLength;
-if (ROSTER) {
-  document.body.classList.add('roster');
-  document.querySelector('.field.pick').hidden = false;
-  [el.first, el.last, el.sid, el.id].forEach((i) => { i.readOnly = true; });
-  el.sid.placeholder = el.id.placeholder = 'ขึ้นเองเมื่อกดเลือกชื่อ';
-  $('idHint').textContent = 'ขึ้นเองจากบัญชีรายชื่อ ตรวจให้ตรงกับบัตร ถ้าไม่ตรงให้แจ้งครูผู้กำกับ';
+
+// โหมดบัญชีรายชื่อ (มี uploadUrl): กดเลือกชื่อแล้วข้อมูลขึ้นเอง ถ้าโหลดรายชื่อไม่ได้ จะเปิดให้กรอกเองแทน (manual)
+let manual = false;
+const fromRoster = () => ROSTER && !manual;
+
+function applyMode() {
+  const locked = fromRoster();
+  document.body.classList.toggle('roster', locked);
+  document.querySelector('.field.pick').hidden = !ROSTER;
+  [el.first, el.last, el.sid, el.id].forEach((i) => { i.readOnly = locked; });
+  el.sid.placeholder = locked ? 'ขึ้นเองเมื่อกดเลือกชื่อ' : '0'.repeat(C.sidLength);
+  el.id.placeholder = locked ? 'ขึ้นเองเมื่อกดเลือกชื่อ' : '0 0000 00000 00 0';
+  $('idHint').textContent = locked
+    ? 'ขึ้นเองจากบัญชีรายชื่อ ตรวจให้ตรงกับบัตร ถ้าไม่ตรงให้แจ้งครูผู้กำกับ'
+    : 'พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ';
+  $('privacy').textContent = locked
+    ? 'ชื่อ เลขประจำตัวประชาชน และเลข นศท. ดึงมาจากบัญชีรายชื่อของครู เมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรองไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
+    : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
 }
+applyMode();
 
 /* ---------- อ่านค่าจากฟอร์ม ---------- */
 const cleanName = (s) => s.replace(/[^ก-๎ a-zA-Z.\-]/g, '').replace(/\s+/g, ' ').trim();
@@ -97,7 +105,7 @@ let picked = null;  // คนที่นักเรียนกดเลือ
 
 function validate(v) {
   const err = {}, warn = {};
-  if (ROSTER) {
+  if (fromRoster()) {
     if (!picked) err.pick = people ? 'กรุณากดค้นหาชื่อ แล้วกดเลือกชื่อของคุณ' : 'ยังโหลดรายชื่อไม่สำเร็จ กรุณากดลองใหม่ หรือแจ้งครูผู้กำกับ';
     else if (lookup.state === 'checking') err.pick = 'กำลังดึงข้อมูลจากบัญชีรายชื่อ…';
     else if (lookup.state !== 'found') err.pick = 'ดึงข้อมูลจากบัญชีรายชื่อไม่สำเร็จ กรุณากดเลือกชื่ออีกครั้ง หรือแจ้งครูผู้กำกับ';
@@ -366,6 +374,11 @@ async function loadPeople(silent) {
     people = r.list
       .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`), done: !!p.done, no: p.no || '' }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+    if (manual) { // โหลดได้แล้ว กลับมาใช้โหมดกดเลือกชื่อ และล้างสิ่งที่พิมพ์เองไว้
+      manual = false; picked = null; lookup = { key: '', state: 'idle' };
+      [el.first, el.last, el.sid, el.id].forEach((i) => { i.value = ''; });
+      applyMode();
+    }
     if (picked) picked = people.find((p) => p.k === picked.k) || picked;
     pickHint.textContent = `มี ${people.length} รายชื่อ พิมพ์ค้นหาหรือกดเลือกชื่อของคุณ (✓ = ส่งหนังสือแล้ว)`;
     renderList();
@@ -375,13 +388,19 @@ async function loadPeople(silent) {
     console.error(e);
     if (silent && people) return; // รีเฟรชเงียบไม่สำเร็จ ใช้ข้อมูลเดิมต่อ
     people = null;
-    pickHint.textContent = 'โหลดรายชื่อไม่สำเร็จ ';
+    picked = null;
+    pickList.replaceChildren();
+    $('pickChosen').textContent = '';
+    manual = true; // รายชื่อใช้ไม่ได้ชั่วคราว: เปิดให้กรอกเองเพื่อให้ยังออกหนังสือได้ (ไม่ส่งสำเนาเข้า Drive)
+    applyMode();
+    pickHint.textContent = 'โหลดรายชื่อไม่สำเร็จ กรอกข้อมูลเองด้านล่างได้ หรือ ';
     const retry = document.createElement('button');
-    retry.type = 'button'; retry.textContent = 'ลองใหม่';
+    retry.type = 'button'; retry.textContent = 'ลองโหลดรายชื่ออีกครั้ง';
     retry.addEventListener('click', () => loadPeople());
     pickHint.append(retry);
     renderStatus();
   }
+  render();
   showErrors(false);
 }
 
@@ -503,7 +522,7 @@ let lastSent = '';
 
 // 'off' = ยังไม่ได้ตั้ง uploadUrl, 'sent' = ส่งสำเร็จ (รวมถึงข้อมูลชุดเดิมที่เพิ่งส่งไปแล้ว)
 async function sendCopies(v, pdf) {
-  if (!C.uploadUrl) return 'off';
+  if (!fromRoster()) return 'off';
   const sig = JSON.stringify(v);
   if (sig === lastSent) return 'sent';
   const docx = await makeDocx(v);
@@ -530,7 +549,7 @@ el.btnPdf.addEventListener('click', async () => {
       setStatus('สร้าง PDF ไม่สำเร็จ ลองกดปุ่ม “พิมพ์” แล้วเลือก “บันทึกเป็น PDF” แทน', true);
       return;
     }
-    if (C.uploadUrl) setStatus('ดาวน์โหลดแล้ว กำลังส่งสำเนาให้ครู… อย่าเพิ่งปิดหน้านี้');
+    if (fromRoster()) setStatus('ดาวน์โหลดแล้ว กำลังส่งสำเนาให้ครู… อย่าเพิ่งปิดหน้านี้');
     try {
       const r = await sendCopies(v, pdf);
       if (r === 'sent') loadPeople(true); // ให้หน้าสรุปเห็นว่าส่งแล้ว
@@ -551,7 +570,7 @@ el.btnPrint.addEventListener('click', async () => {
   if (!checkBeforeExport()) return;
   const v = read();
   setStatus('');
-  if (C.uploadUrl) {
+  if (fromRoster()) {
     setBusy(true);
     setStatus('กำลังส่งสำเนาให้ครู…');
     try {
