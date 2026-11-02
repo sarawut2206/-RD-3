@@ -52,7 +52,7 @@ $('pPhone').textContent = `${FIXED.phoneLabel} : ${FIXED.phone}`;
 $('pDate').textContent = FIXED.date;
 
 $('privacy').textContent = ROSTER
-  ? 'ระบบใช้เลขประจำตัวประชาชนยืนยันว่าตรงกับชื่อที่เลือกในบัญชีรายชื่อของครู และเมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
+  ? 'ชื่อ เลขประจำตัวประชาชน และเลข นศท. ดึงมาจากบัญชีรายชื่อของครู เมื่อกดดาวน์โหลดหรือพิมพ์ จะส่งสำเนาหนังสือรับรองไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
   : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
 
 $('sidLabel').textContent = `เลขประจำตัวนักศึกษาวิชาทหาร (${C.sidLength} หลัก)`;
@@ -61,9 +61,9 @@ el.sid.maxLength = C.sidLength;
 if (ROSTER) {
   document.body.classList.add('roster');
   document.querySelector('.field.pick').hidden = false;
-  [el.first, el.last, el.sid].forEach((i) => { i.readOnly = true; });
-  el.sid.placeholder = 'ระบบเติมให้หลังยืนยันเลขบัตร';
-  $('idHint').textContent = 'ระบบจะตรวจว่าตรงกับชื่อที่เลือก และเติมเลข นศท. ให้';
+  [el.first, el.last, el.sid, el.id].forEach((i) => { i.readOnly = true; });
+  el.sid.placeholder = el.id.placeholder = 'ขึ้นเองเมื่อกดเลือกชื่อ';
+  $('idHint').textContent = 'ขึ้นเองจากบัญชีรายชื่อ ตรวจให้ตรงกับบัตร ถ้าไม่ตรงให้แจ้งครูผู้กำกับ';
 }
 
 /* ---------- อ่านค่าจากฟอร์ม ---------- */
@@ -91,20 +91,19 @@ function idChecksumOk(id) {
 }
 
 /* ---------- ตรวจข้อมูล ---------- */
-let lookup = { id: '', key: '', state: 'idle' };
+let lookup = { key: '', state: 'idle' };
 let people = null;  // [{ k, first, last, name }] จากบัญชีรายชื่อ
 let picked = null;  // คนที่นักเรียนกดเลือก
 
 function validate(v) {
   const err = {}, warn = {};
-  if (ROSTER && !picked) err.pick = people ? 'กรุณากดเลือกชื่อของคุณจากรายชื่อ' : 'ยังโหลดรายชื่อไม่สำเร็จ กรุณากดลองใหม่ หรือแจ้งครูผู้กำกับ';
-  if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
-  else if (ROSTER) {
-    if (picked && lookup.state === 'checking') err.id = 'กำลังตรวจกับบัญชีรายชื่อ…';
-    else if (picked && lookup.state === 'mismatch') err.id = 'เลขบัตรไม่ตรงกับชื่อที่เลือก กรุณาเช็กชื่อและเลขบัตรอีกครั้ง หรือแจ้งครูผู้กำกับ';
-    else if (picked && lookup.state !== 'found') err.id = 'ตรวจกับบัญชีรายชื่อไม่สำเร็จ กรุณาลบเลขตัวสุดท้ายแล้วพิมพ์ใหม่ หรือแจ้งครูผู้กำกับ';
+  if (ROSTER) {
+    if (!picked) err.pick = people ? 'กรุณากดค้นหาชื่อ แล้วกดเลือกชื่อของคุณ' : 'ยังโหลดรายชื่อไม่สำเร็จ กรุณากดลองใหม่ หรือแจ้งครูผู้กำกับ';
+    else if (lookup.state === 'checking') err.pick = 'กำลังดึงข้อมูลจากบัญชีรายชื่อ…';
+    else if (lookup.state !== 'found') err.pick = 'ดึงข้อมูลจากบัญชีรายชื่อไม่สำเร็จ กรุณากดเลือกชื่ออีกครั้ง หรือแจ้งครูผู้กำกับ';
   } else {
-    if (!idChecksumOk(v.id)) warn.id = 'เลขนี้ไม่ผ่านการตรวจสอบหลักสุดท้าย กรุณาเช็กกับบัตรอีกครั้ง';
+    if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
+    else if (!idChecksumOk(v.id)) warn.id = 'เลขนี้ไม่ผ่านการตรวจสอบหลักสุดท้าย กรุณาเช็กกับบัตรอีกครั้ง';
     if (!v.first) err.first = 'กรุณากรอกชื่อ';
     if (!v.last) err.last = 'กรุณากรอกนามสกุล';
     if (v.sid.length !== C.sidLength) err.sid = `เลขประจำตัว นศท. ต้องมี ${C.sidLength} หลัก (ตอนนี้ ${v.sid.length} หลัก)`;
@@ -214,7 +213,6 @@ el.id.addEventListener('input', () => {
   const d = digitsOnly(el.id.value).slice(0, 13);
   const g = groupId(d);
   if (el.id.value !== g) el.id.value = g;
-  if (ROSTER) verifyId();
 });
 [el.no, el.sid].forEach((i) => i.addEventListener('input', () => {
   const d = digitsOnly(i.value).slice(0, i === el.no ? 3 : C.sidLength);
@@ -234,7 +232,7 @@ Object.values(el).forEach((n) => {
 });
 
 $('btnReset').addEventListener('click', () => {
-  $('form').reset(); touched.clear(); picked = null; lookup = { id: '', key: '', state: 'idle' };
+  $('form').reset(); touched.clear(); picked = null; lookup = { key: '', state: 'idle' };
   pickFilter.value = ''; showChosen();
   if (ROSTER) { renderList(); loadPeople(true); }
   setStatus(''); render(); showErrors(false);
@@ -411,38 +409,40 @@ pickFilter.addEventListener('input', renderList);
 pickList.addEventListener('change', () => {
   const p = people?.find((x) => x.k === pickList.value);
   if (!p) return;
-  if (picked && picked.k !== p.k) { el.id.value = ''; touched.delete('id'); } // เลขบัตรเดิมเป็นของอีกคน
   picked = p;
   touched.add('pick');
-  el.first.value = p.first; el.last.value = p.last; el.sid.value = '';
-  lookup = { id: '', key: '', state: 'idle' };
+  el.first.value = p.first; el.last.value = p.last; el.sid.value = ''; el.id.value = '';
   showChosen();
-  verifyId();
+  fetchPick(p.k);
   render();
   showErrors(false);
 });
 
-// ยืนยันว่าเลขบัตรตรงกับชื่อที่เลือก (ฝั่งครูเป็นคนเทียบ เว็บไม่เคยได้เลขบัตรของคนอื่น)
-async function verifyId() {
-  const id = digitsOnly(el.id.value).slice(0, 13);
-  const key = picked ? picked.k : '';
-  if (!picked || id.length !== 13) { el.sid.value = ''; lookup = { id, key, state: 'idle' }; return; }
-  if (lookup.id === id && lookup.key === key && lookup.state !== 'idle') return;
-  el.sid.value = '';
-  lookup = { id, key, state: 'checking' };
-  touched.add('id');
-  showErrors(false);
-  let state = 'error', sid = '';
+// ปุ่ม "ค้นหาชื่อ": กรองรายชื่อตามที่พิมพ์ แล้วพาไปที่รายการให้กดเลือก
+$('btnFind').addEventListener('click', () => {
+  renderList();
+  pickList.focus();
+  pickList.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
+pickFilter.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btnFind').click(); } });
+
+// ดึงเลขบัตรประชาชนและเลข นศท. ของคนที่เลือกจากบัญชีรายชื่อมาเติมในฟอร์ม
+async function fetchPick(key) {
+  lookup = { key, state: 'checking' };
+  let state = 'error', r = null;
   try {
-    const r = await callScript({ action: 'verify', key, id });
-    state = r.found ? 'found' : 'mismatch';
-    sid = r.sid || '';
+    r = await callScript({ action: 'pick', key });
+    state = r.found ? 'found' : 'error';
   } catch (e) {
     console.error(e);
   }
-  if (lookup.id !== id || lookup.key !== key) return; // นักเรียนเปลี่ยนเลขหรือชื่อไปแล้วระหว่างรอคำตอบ
-  lookup = { id, key, state };
-  if (state === 'found') el.sid.value = sid;
+  if (lookup.key !== key) return; // นักเรียนกดเลือกคนอื่นไปแล้วระหว่างรอคำตอบ
+  lookup = { key, state };
+  if (state === 'found') {
+    el.id.value = groupId(digitsOnly(r.id).slice(0, 13));
+    el.sid.value = digitsOnly(r.sid);
+    touched.add('id'); touched.add('sid');
+  }
   render();
   showErrors(false);
 }

@@ -1,4 +1,4 @@
-// รับข้อมูลจากหน้าเว็บ: ส่งรายชื่อ นศท. ให้เลือก, ยืนยันเลขบัตร, และเก็บไฟล์ PDF กับ Word ลง Drive แยกตามลำดับเลขที่
+// รับข้อมูลจากหน้าเว็บ: ส่งรายชื่อ นศท. ให้เลือก, คืนข้อมูลของคนที่เลือก, และเก็บไฟล์ PDF กับ Word ลง Drive แยกตามลำดับเลขที่
 // วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วทำให้ใช้งานได้เป็นเว็บแอป (ดูขั้นตอนใน README)
 //
 // ปกติไม่ต้องแก้อะไรในไฟล์นี้: สคริปต์หาโฟลเดอร์และชีตของครูเองจากชื่อ
@@ -29,14 +29,14 @@ function doPost(e) {
     if (d.action === 'list') return reply_(listPayload_());
 
     const roster = loadRoster_();
-    const id = parseId_(d.id);
-
-    // ยืนยันว่าเลขบัตรที่กรอกตรงกับชื่อที่เลือก แล้วจึงคืนเลข นศท.
-    if (d.action === 'verify') {
+    // นักเรียนกดเลือกชื่อ: คืนเลขบัตรประชาชนและเลข นศท. ของคนนั้นคนเดียว
+    if (d.action === 'pick') {
       const s = roster.filter(function (x) { return x.key === String(d.key); })[0];
-      if (!s || s.id !== id) return reply_({ ok: true, found: false });
-      return reply_({ ok: true, found: true, sid: s.sid });
+      if (!s) return reply_({ ok: true, found: false });
+      return reply_({ ok: true, found: true, id: s.id, sid: s.sid });
     }
+
+    const id = parseId_(d.id);
 
     const student = roster.filter(function (x) { return x.id === id; })[0];
     if (!student) throw new Error('not in roster');

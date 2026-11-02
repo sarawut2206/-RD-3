@@ -36,8 +36,11 @@
     <form id="form" novalidate autocomplete="off">
 
       <div class="field pick" data-f="pick" hidden>
-        <label for="pickFilter">เลือกชื่อของคุณ</label>
-        <input id="pickFilter" type="search" placeholder="พิมพ์ค้นหาชื่อ หรือเลื่อนหา" autocomplete="off">
+        <label for="pickFilter">ค้นหาชื่อของคุณ แล้วกดเลือก</label>
+        <div class="pick-search">
+          <input id="pickFilter" type="search" placeholder="พิมพ์ชื่อหรือนามสกุล" autocomplete="off">
+          <button type="button" id="btnFind" class="primary">ค้นหาชื่อ</button>
+        </div>
         <select id="pickList" size="7" aria-label="รายชื่อนักศึกษาวิชาทหาร"></select>
         <p class="hint" id="pickHint"></p>
         <p class="chosen" id="pickChosen"></p>

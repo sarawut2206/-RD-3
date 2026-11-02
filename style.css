@@ -61,6 +61,9 @@ input[readonly] { background: #f1f4f8; }
 .roster .name-row { display: none; }
 .field[hidden], .tabs[hidden], main[hidden] { display: none; }
 .hint, .msg, .privacy, .status, .lead { font-size: 1rem; }
+.pick-search { display: flex; gap: 8px; }
+.pick-search input { flex: 1; min-width: 0; }
+.pick-search button { flex: none; }
 .chosen { margin: 8px 0 0; font-size: 1.2rem; font-weight: 700; color: var(--accent); }
 .chosen:empty { display: none; }
 .chosen.sent { color: var(--warn); }
