@@ -60,48 +60,10 @@ input:focus, select:focus, button:focus-visible { outline: 3px solid #9cc2e6; ou
 input[readonly] { background: #f1f4f8; }
 .roster .name-row { display: none; }
 .field[hidden], .tabs[hidden], main[hidden] { display: none; }
-
-/* ---------- ขั้นตอน ---------- */
-.progress { display: flex; gap: 6px; margin: 10px 0 4px; }
-.progress i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
-.progress i.on { background: var(--accent); }
-.progress-text { margin: 0 0 12px; color: var(--muted); font-size: .95rem; }
-
-.step { border: 1.5px solid var(--line); border-radius: 12px; margin: 0 0 10px; background: #fff; }
-.step-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
-.step-num { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--line); color: var(--muted); font-weight: 700; }
-.step-title { flex: 1; min-width: 0; }
-.step-title h3 { margin: 0; font-size: 1.1rem; line-height: 1.25; }
-.step-sum { display: none; margin: 1px 0 0; color: var(--ink); font-size: .98rem; overflow-wrap: anywhere; }
-.step-edit { display: none; min-height: 38px; padding: 2px 14px; }
-.step-body { display: none; padding: 2px 14px 14px; }
-.step-actions { margin-top: 6px; }
-.step-actions .primary { width: 100%; }
-
-.step.is-active { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31, 78, 121, .12); }
-.step.is-active .step-body { display: block; }
-.step.is-active .step-num { background: var(--accent); color: var(--accent-ink); }
-.step.is-done .step-sum { display: block; }
-.step.is-done .step-edit { display: inline-block; }
-.step.is-done .step-num { background: #2e7d32; color: transparent; position: relative; }
-.step.is-done .step-num::after { content: "✓"; position: absolute; color: #fff; }
-.step.is-wait { opacity: .6; background: #f7f9fb; }
-
+.hint, .msg, .privacy, .status, .lead { font-size: 1rem; }
 .chosen { margin: 8px 0 0; font-size: 1.2rem; font-weight: 700; color: var(--accent); }
 .chosen:empty { display: none; }
 .chosen.sent { color: var(--warn); }
-
-.review { margin: 0 0 14px; display: grid; gap: 6px; }
-.review > div { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f7f9fb; }
-.review dt { flex: 0 0 100%; color: var(--muted); font-size: 1rem; line-height: 1.2; }
-.review dd { flex: 1; margin: 0; font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
-.review button { min-height: 36px; padding: 0 12px; font-weight: 400; }
-.review-note { margin: 0 0 10px; color: var(--muted); font-size: 1rem; }
-.step-sum { font-size: 1.08rem !important; }
-.progress-text, .hint, .msg, .privacy, .status, .lead { font-size: 1rem !important; }
-.status-list .tag, .status-list .idx { font-size: 1rem; }
-.restart { width: 100%; margin-top: 10px; }
-.actions { margin-top: 0; }
 
 /* ---------- เมนูบน ---------- */
 .tabs { background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
@@ -125,10 +87,10 @@ input[readonly] { background: #f1f4f8; }
 .status-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .status-list li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
 .status-list .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.status-list .tag { flex: none; font-size: .92rem; padding: 1px 10px; border-radius: 999px; }
+.status-list .tag { flex: none; font-size: 1rem; padding: 1px 10px; border-radius: 999px; }
 .status-list .ok .tag { background: #e3f3e4; color: #1b5e20; }
 .status-list .todo .tag { background: #fdecea; color: var(--bad); }
-.status-list .idx { flex: none; width: 2.2em; color: var(--muted); text-align: right; font-size: .9rem; }
+.status-list .idx { flex: none; width: 2.2em; color: var(--muted); text-align: right; font-size: 1rem; }
 #pickList { margin-top: 6px; padding: 4px; min-height: 0; height: 11.5em; }
 #pickList option { padding: 6px 8px; border-radius: 6px; }
 #pickList option:checked { background: var(--accent) linear-gradient(0deg, var(--accent), var(--accent)); color: var(--accent-ink); }
