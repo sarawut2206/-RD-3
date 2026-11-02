@@ -1,14 +1,14 @@
 // รับข้อมูลจากหน้าเว็บ: ส่งรายชื่อ นศท. ให้เลือก, คืนข้อมูลของคนที่เลือก, และเก็บไฟล์ PDF กับ Word ลง Drive แยกตามลำดับเลขที่
 // วางไฟล์นี้ใน Apps Script ของบัญชีครู แล้วทำให้ใช้งานได้เป็นเว็บแอป (ดูขั้นตอนใน README)
 //
-// ปกติไม่ต้องแก้อะไรในไฟล์นี้: สคริปต์หาโฟลเดอร์และชีตของครูเองจากชื่อ
-//   - โฟลเดอร์ใน Drive ของคุณที่ชื่อมีคำว่า "นำปลด"
-//   - Google ชีตใน Drive ของคุณที่ชื่อมีคำว่า "รายชื่อ" และ "นศท"
-// ถ้าพบหลายรายการ ให้ใส่รหัสตรงนี้แทน (รหัสคือข้อความใน URL หลัง /folders/ หรือระหว่าง /d/ กับ /edit)
+// ปกติไม่ต้องแก้อะไรในไฟล์นี้: สคริปต์หาโฟลเดอร์และชีตของครูเอง
+//   - โฟลเดอร์ใน Drive ของคุณที่ชื่อ "นำปลด 2569" (ต้องมีโฟลเดอร์เดียวที่ชื่อนี้)
+//   - Google ชีตใน Drive ของคุณที่หัวตารางเป็นรายชื่อ นศท. (ไม่สนชื่อไฟล์)
+// ถ้าหาไม่เจอหรือเจอหลายรายการ ให้ใส่รหัสตรงนี้แทน (รหัสคือข้อความใน URL หลัง /folders/ หรือระหว่าง /d/ กับ /edit)
 const FOLDER_ID = '';
 const ROSTER_SHEET_ID = '';
 
-const FOLDER_NAME_HINT = 'นำปลด';
+const FOLDER_NAME = 'นำปลด 2569';
 const MAX_BYTES = 5 * 1024 * 1024; // จำกัดไฟล์ละ 5 MB
 const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const CACHE_SECONDS = 20;
@@ -69,9 +69,7 @@ function resolve_(configured, cacheKey, search, what) {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(cacheKey);
   if (hit) return hit;
-  const found = [];
-  const it = search();
-  while (it.hasNext()) found.push(it.next());
+  const found = search();
   if (found.length !== 1) {
     throw new Error('หา ' + what + ' ใน Drive ของบัญชีนี้ได้ ' + found.length + ' รายการ (ต้องมี 1 รายการ) ถ้ามีแล้ว ให้ใส่รหัสในบรรทัดบนสุดของ Code.gs');
   }
@@ -81,15 +79,33 @@ function resolve_(configured, cacheKey, search, what) {
 
 function rootFolder_() {
   const id = resolve_(FOLDER_ID, 'folderId', function () {
-    return DriveApp.searchFolders("title contains '" + FOLDER_NAME_HINT + "' and 'me' in owners and trashed = false");
-  }, 'โฟลเดอร์ที่ชื่อมีคำว่า "' + FOLDER_NAME_HINT + '"');
+    const found = [];
+    const it = DriveApp.searchFolders("title contains '" + FOLDER_NAME + "' and 'me' in owners and trashed = false");
+    while (it.hasNext()) {
+      const f = it.next();
+      if (f.getName().trim() === FOLDER_NAME) found.push(f);
+    }
+    return found;
+  }, 'โฟลเดอร์ชื่อ "' + FOLDER_NAME + '"');
   return DriveApp.getFolderById(id);
 }
 
+// หาชีตรายชื่อจากหัวตาราง (มีคอลัมน์ นศท / ประชาชน / ชื่อ) ไม่พึ่งชื่อไฟล์ ดูเฉพาะ Google ชีตที่แก้ไขใน 45 วันล่าสุด
 function rosterSheetId_() {
   return resolve_(ROSTER_SHEET_ID, 'sheetId', function () {
-    return DriveApp.searchFiles("title contains 'รายชื่อ' and title contains 'นศท' and mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false");
-  }, 'Google ชีตที่ชื่อมีคำว่า "รายชื่อ" และ "นศท"');
+    const since = Utilities.formatDate(new Date(Date.now() - 45 * 86400000), 'UTC', "yyyy-MM-dd'T'HH:mm:ss");
+    const it = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false and modifiedDate > '" + since + "'");
+    const found = [];
+    for (let n = 0; it.hasNext() && n < 40; n++) {
+      const f = it.next();
+      try {
+        const sheet = SpreadsheetApp.openById(f.getId()).getSheets()[0];
+        const rows = sheet.getRange(1, 1, Math.min(10, sheet.getMaxRows()), Math.min(10, sheet.getMaxColumns())).getValues();
+        if (rows.some(function (row) { return headerColumns_(row); })) found.push(f);
+      } catch (err) { /* เปิดไม่ได้ ข้าม */ }
+    }
+    return found;
+  }, 'Google ชีตรายชื่อ นศท. (ดูจากหัวตาราง และต้องแก้ไขภายใน 45 วัน ถ้ายังเป็นไฟล์ .xlsx ให้แปลงเป็น Google ชีตก่อน)');
 }
 
 /* ---------- บัญชีรายชื่อ ---------- */
