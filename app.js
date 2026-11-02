@@ -587,19 +587,70 @@ async function fetchPick(key) {
 let statusFilter = 'todo';
 const statusSearch = $('statusSearch');
 
-// แถบครูในหน้าสรุป: ยังไม่เข้าระบบ = ปุ่มพาไปใส่รหัส, เข้าแล้ว = มีปุ่มลบข้างชื่อคนที่กรอกแล้ว
+const el$ = (tag, props = {}, text) => Object.assign(document.createElement(tag), props, text == null ? {} : { textContent: text });
+const docOf = (p) => docs.find((d) => d.pdf && d.no === p.no && d.name === p.name); // เอกสารของคนที่กรอกแล้ว (จับคู่จากเลขที่+ชื่อโฟลเดอร์)
+
+// แถบครูในหน้าสรุป: ยังไม่เข้าระบบ = ช่องใส่รหัสครู, เข้าแล้ว = ปุ่มพิมพ์ทั้งหมด + ปุ่มพิมพ์/ลบข้างชื่อคนที่กรอกแล้ว
 function renderStatusAdmin() {
   const box = $('statusAdmin');
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  if (admin.pin) {
-    btn.textContent = 'ออกจากโหมดครู';
-    btn.addEventListener('click', adminLogout);
-    box.replaceChildren('โหมดครู: กดปุ่ม "ลบ ให้กรอกใหม่" ข้างชื่อคนที่กรอกผิด ', btn);
-  } else {
-    btn.textContent = 'ครู: เข้าสู่ระบบเพื่อแก้ไข';
-    btn.addEventListener('click', () => showView('admin'));
-    box.replaceChildren(btn);
+  if (!admin.pin) {
+    const form = el$('form', { autocomplete: 'off' });
+    const pin = el$('input', { type: 'password', placeholder: 'รหัสครู', autocomplete: 'off', ariaLabel: 'รหัสครู' });
+    const go = el$('button', { type: 'submit' }, 'เข้าสู่ระบบ');
+    const msg = el$('span', { className: 'bad' });
+    form.append('ครู: ใส่รหัสเพื่อพิมพ์หรือแก้ไข ', pin, go, msg);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      go.disabled = true; msg.textContent = '';
+      try { await adminLogin(pin.value); } catch (err) { msg.textContent = loginError(err); go.disabled = false; }
+    });
+    box.replaceChildren(form);
+    return;
+  }
+  const ready = docs.filter((d) => d.pdf).length;
+  const printAll = el$('button', { type: 'button', className: 'primary' },
+    docsLoading ? 'กำลังโหลดเอกสาร…' : `พิมพ์ทั้งหมด (${ready} ฉบับ เรียงตามเลขที่)`);
+  printAll.disabled = docsLoading || !ready;
+  printAll.addEventListener('click', () => printDocs(docs.filter((d) => d.pdf), printAll));
+  const out = el$('button', { type: 'button' }, 'ออกจากโหมดครู');
+  out.addEventListener('click', adminLogout);
+  box.replaceChildren(printAll, out, ' โหมดครู: มีปุ่ม "พิมพ์" และ "ลบ ให้กรอกใหม่" ข้างชื่อคนที่กรอกแล้ว');
+}
+
+// พิมพ์: ดึง PDF ที่นักเรียนส่งมา เอารูปหนังสือมาวางทีละหน้า A4 แล้วเรียกหน้าต่างพิมพ์ของเบราว์เซอร์
+async function printDocs(list, btn) {
+  const hint = $('statusHint');
+  if (!list.length) { hint.textContent = 'ไม่มีเอกสารให้พิมพ์'; return; }
+  if (btn) btn.disabled = true;
+  const urls = [];
+  try {
+    hint.textContent = 'กำลังเตรียมไฟล์สำหรับพิมพ์…';
+    const files = await fetchDriveFiles(list.map((d) => d.pdf), (n, total) => { hint.textContent = `กำลังเตรียมไฟล์สำหรับพิมพ์… ${n}/${total}`; });
+    const area = $('printArea');
+    area.replaceChildren(...list.map((d) => {
+      const { jpeg } = extractJpeg(files.get(d.pdf).bytes);
+      const url = URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }));
+      urls.push(url);
+      return el$('img', { src: url, alt: `เลขที่ ${+d.no} ${d.name}` });
+    }));
+    await Promise.all([...area.children].map((img) => img.decode()));
+    const cleanup = () => {
+      document.body.classList.remove('printing');
+      area.replaceChildren();
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    hint.textContent = `ส่งไปหน้าต่างพิมพ์แล้ว ${list.length} ฉบับ เรียงตามเลขที่ ${+list[0].no}${list.length > 1 ? ` ถึง ${+list[list.length - 1].no}` : ''}`;
+    document.body.classList.add('printing');
+    window.print();
+  } catch (e) {
+    console.error(e);
+    urls.forEach((u) => URL.revokeObjectURL(u));
+    if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
+    hint.textContent = `เตรียมไฟล์พิมพ์ไม่สำเร็จ: ${String(e.message || e)}`;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -609,6 +660,7 @@ async function deleteSubmission(p) {
   hint.textContent = `กำลังลบข้อมูลของ ${p.name}…`;
   try {
     const r = await adminCall('adminDelete', { key: p.k });
+    loadDocs(); // รายการพิมพ์ต้องไม่มีไฟล์ที่เพิ่งลบ
     await loadPeople(true);
     hint.textContent = r.trashed ? `ลบข้อมูลของ ${p.name} แล้ว (${r.trashed} โฟลเดอร์ ย้ายไปถังขยะใน Drive) ให้นักเรียนกรอกใหม่ได้` : `ไม่พบโฟลเดอร์ของ ${p.name} ใน Drive (อาจถูกลบไปแล้ว)`;
   } catch (e) {
@@ -636,6 +688,7 @@ function renderStatus() {
 
   const q = squash(statusSearch.value);
   const rows = people.filter((p) => (statusFilter === 'all' || p.done === (statusFilter === 'done')) && (!q || p.name.includes(q)));
+  if (statusFilter === 'done') rows.sort((a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : 0)); // ที่กรอกแล้วเรียงตามเลขที่ เหมือนลำดับที่พิมพ์
   $('statusHint').textContent = rows.length ? '' : (q ? 'ไม่พบชื่อที่ค้นหา' : statusFilter === 'todo' ? 'ทุกคนกรอกครบแล้ว' : 'ยังไม่มีใครกรอก');
   list.replaceChildren(...rows.map((p, i) => {
     const li = document.createElement('li');
@@ -646,10 +699,14 @@ function renderStatus() {
     tag.className = 'tag'; tag.textContent = p.done ? `✓ กรอกแล้ว · ลำดับ ${p.no}` : 'ยังไม่กรอก';
     li.append(idx, nm, tag);
     if (p.done && admin.pin) {
-      const del = document.createElement('button');
-      del.type = 'button'; del.className = 'del'; del.textContent = 'ลบ ให้กรอกใหม่';
+      const doc = docOf(p);
+      const print = el$('button', { type: 'button', className: 'prt' }, 'พิมพ์');
+      print.disabled = !doc;
+      print.title = doc ? '' : docsLoading ? 'กำลังโหลดเอกสาร' : 'ไม่พบไฟล์ของคนนี้ใน Drive';
+      print.addEventListener('click', () => printDocs([doc], print));
+      const del = el$('button', { type: 'button', className: 'del' }, 'ลบ ให้กรอกใหม่');
       del.addEventListener('click', () => deleteSubmission(p));
-      li.append(del);
+      li.append(print, del);
     }
     return li;
   }));
@@ -881,19 +938,26 @@ function saveFile(bytes, name, type) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
+let docsLoading = false;
+
 async function loadDocs() {
   const st = $('docsStatus');
   st.classList.remove('bad');
   st.textContent = 'กำลังโหลดรายการเอกสาร (อาจใช้เวลาครึ่งนาทีถ้ามีเอกสารเยอะ)…';
   $('btnDocsMerge').disabled = true;
+  docsLoading = true;
+  renderStatus();
   try {
     docs = (await adminCall('adminDocs')).docs.sort((a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : 0)); // เรียงตามเลขที่เสมอ
     st.textContent = '';
   } catch (e) {
     st.classList.add('bad');
     st.textContent = `โหลดรายการไม่สำเร็จ: ${String(e.message || e)}`;
+    docsLoading = false;
+    renderStatus();
     return;
   }
+  docsLoading = false;
   renderDocs();
 }
 
@@ -905,6 +969,7 @@ function renderDocs() {
     ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}`
     : 'ยังไม่มีเอกสารที่ส่งเข้ามา';
   $('btnDocsMerge').disabled = !docs.some((d) => d.pdf);
+  renderStatus(); // ปุ่มพิมพ์ในหน้าสรุปใช้รายการเดียวกัน
   $('docsBody').replaceChildren(...docs.map((d) => {
     const tr = document.createElement('tr');
     if (count[d.no] > 1) tr.className = 'dup';
@@ -978,21 +1043,32 @@ $('btnDocsMerge').addEventListener('click', mergeDocs);
 $('btnDocsReload').addEventListener('click', loadDocs);
 ['docFrom', 'docTo'].forEach((id) => $(id).addEventListener('input', () => { $(id).value = digitsOnly($(id).value).slice(0, 3); }));
 
+const loginError = (err) => (/Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err));
+
+// เข้าสู่โหมดครู (ใช้ทั้งจากแท็บ "สำหรับครู" และช่องรหัสในหน้าสรุป) ผิดพลาดจะ throw
+async function adminLogin(pin) {
+  admin.pin = pin;
+  try {
+    renderAdminInfo(await adminCall('adminInfo'));
+  } catch (err) {
+    admin.pin = '';
+    throw err;
+  }
+  $('adminBody').hidden = false;
+  $('adminLogin').hidden = true;
+  renderStatus(); // หน้าสรุปจะมีปุ่มพิมพ์และปุ่มลบให้ครู
+  loadDocs();
+}
+
 $('adminLogin').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = $('adminLoginMsg');
   msg.textContent = '';
-  admin.pin = $('adminPin').value;
   $('btnAdminLogin').disabled = true;
   try {
-    renderAdminInfo(await adminCall('adminInfo'));
-    $('adminBody').hidden = false;
-    $('adminLogin').hidden = true;
-    renderStatus(); // หน้าสรุปจะมีปุ่มลบให้ครู
-    loadDocs();
+    await adminLogin($('adminPin').value);
   } catch (err) {
-    admin.pin = '';
-    msg.textContent = /Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err);
+    msg.textContent = loginError(err);
   } finally {
     $('btnAdminLogin').disabled = false;
   }

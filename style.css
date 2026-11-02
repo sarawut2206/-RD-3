@@ -133,6 +133,11 @@ input[type="file"] { padding: 8px; }
 .status-list .todo .tag { background: #fdecea; color: var(--bad); }
 .teacher-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 1rem !important; margin: 10px 0 4px; }
 .teacher-line button { min-height: 36px; padding: 0 14px; font-weight: 400; }
+.teacher-line input { min-height: 36px; width: 9em; padding: 0 10px; }
+.teacher-line .bad { color: var(--bad); }
+.teacher-line .primary { flex: none; }
+.status-list .prt { flex: none; min-height: 34px; padding: 0 14px; font-weight: 400; }
+#printArea { display: none; }
 .status-list .del { flex: none; min-height: 34px; padding: 0 12px; font-weight: 400; border-color: var(--bad); color: var(--bad); }
 .status-list .idx { flex: none; width: 2.2em; color: var(--muted); text-align: right; font-size: 1rem; }
 #pickList { margin-top: 6px; padding: 4px; min-height: 0; height: 11.5em; }
@@ -221,4 +226,10 @@ button:disabled { opacity: .6; cursor: progress; }
   .stage-box { width: 210mm; height: 297mm; box-shadow: none; margin: 0; }
   .scaler { transform: none; }
   .paper .hl { background: none !important; }
+
+  /* พิมพ์เอกสารที่นักเรียนส่งมาจากหน้าสรุป: ซ่อนทุกอย่าง เหลือรูปหนังสือหนึ่งคนต่อหนึ่งหน้า A4 */
+  body.printing .top, body.printing .tabs, body.printing main { display: none !important; }
+  body.printing #printArea { display: block; }
+  #printArea img { display: block; width: 210mm; height: 297mm; break-after: page; page-break-after: always; }
+  #printArea img:last-child { break-after: auto; page-break-after: auto; }
 }
