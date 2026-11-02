@@ -16,6 +16,9 @@ window.CONFIG = {
   phoneLabel: 'เบอร์โทรศัพท์ผู้กำกับนักศึกษาวิชาทหาร',
   phone: '061 5147141',
 
+  // ลิงก์ Web app จาก Apps Script (ดู README) — ถ้าเว้นว่าง เว็บจะดาวน์โหลดอย่างเดียว ไม่ส่งเข้า Drive
+  uploadUrl: '',
+
   // ปีเกิด (พ.ศ.) ที่ให้เลือกในฟอร์ม
   birthYearMin: 2535,
   birthYearMax: 2560

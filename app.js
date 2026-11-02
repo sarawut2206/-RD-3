@@ -32,14 +32,25 @@ fillSelect(el.year, 'พ.ศ.', Array.from({ length: C.birthYearMax - C.birthYea
   const y = C.birthYearMax - i; return [y, y];
 }));
 
-/* ---------- ค่าคงที่ในหนังสือ ---------- */
+/* ---------- ค่าคงที่ในหนังสือ (ใช้ทั้งหน้าเว็บและไฟล์ Word) ---------- */
+const FIXED = {
+  school: `โรงเรียน ${C.school}  จังหวัด ${C.province}`,
+  date: `ให้ไว้  ณ  วันที่ ${toThai(C.issue.day)} เดือน ${MONTHS[C.issue.month - 1]} พ.ศ. ${toThai(C.issue.year)}`,
+  signer: C.signer,
+  signerTitle: C.signerTitle,
+  phoneLabel: C.phoneLabel,
+  phone: toThai(C.phone),
+};
 $('schoolLine').textContent = `โรงเรียน${C.school}`;
-$('pSchool').textContent = `โรงเรียน ${C.school}  จังหวัด ${C.province}`;
-$('pTitle').textContent = C.signerTitle;
-$('pSigner').textContent = `( ${C.signer} )`;
-$('pPhone').textContent = `${C.phoneLabel} : ${toThai(C.phone)}`;
-$('pDate').textContent =
-  `ให้ไว้  ณ  วันที่ ${toThai(C.issue.day)} เดือน ${MONTHS[C.issue.month - 1]} พ.ศ. ${toThai(C.issue.year)}`;
+$('pSchool').textContent = FIXED.school;
+$('pTitle').textContent = FIXED.signerTitle;
+$('pSigner').textContent = `( ${FIXED.signer} )`;
+$('pPhone').textContent = `${FIXED.phoneLabel} : ${FIXED.phone}`;
+$('pDate').textContent = FIXED.date;
+
+$('privacy').textContent = C.uploadUrl
+  ? 'เมื่อกดดาวน์โหลดหรือพิมพ์ ระบบจะส่งสำเนาหนังสือรับรอง (มีเลขประจำตัวประชาชนและวันเกิด) ไปเก็บใน Google Drive ของครูผู้กำกับ ข้อมูลไม่ถูกบันทึกไว้ในเครื่องนี้เมื่อปิดหน้าเว็บ'
+  : 'ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ';
 
 /* ---------- อ่านค่าจากฟอร์ม ---------- */
 const cleanName = (s) => s.replace(/[^ก-๎ a-zA-Z.\-]/g, '').replace(/\s+/g, ' ').trim();
@@ -100,7 +111,37 @@ function showErrors(showAll) {
   return err;
 }
 
-/* ---------- วาดหนังสือ ---------- */
+/* ---------- เนื้อความหนังสือ ---------- */
+// ข้อความตายตัว: ช่องว่างคงไว้ตามต้นฉบับทุกตัว, "|" = จุดที่ตัดบรรทัดได้
+// ช่องที่นักเรียนกรอก = [คีย์, ค่า, ตัวอย่างสีเทา]
+// คืน [บรรทัดแรก, ส่วนที่เหลือ]: ไฟล์ต้นฉบับขึ้นบรรทัดใหม่ด้วยมือหลัง "ลำดับใน" ทำให้ท้ายบรรทัดตรงตามฟอร์มทุกคน
+function bodySegments(v) {
+  const t = toThai;
+  return [[
+    '      หนังสือ|รับรอง|ฉบับ|นี้|ให้|ไว้|เพื่อ|แสดง|ว่า นัก|ศึกษา|วิชา|ทหาร ',
+    ['first', v.first, PLACEHOLDER.first],
+    '  ',
+    ['last', v.last, PLACEHOLDER.last],
+    ' ลำดับ|ใน',
+  ], [
+    'บัญชี|รายชื่อ  ',
+    ['no', v.no && t(v.no), PLACEHOLDER.no],
+    '  หมายเลข|ประจำ|ตัว|ประชาชน ',
+    ['id', v.id && t(groupId(v.id)), PLACEHOLDER.id],
+    ' หมายเลข|ประจำ|ตัว|นัก|ศึกษา|วิชา|ทหาร ',
+    ['sid', v.sid && t(v.sid), PLACEHOLDER.sid],
+    ' เกิด|วัน|ที่ ',
+    ['day', v.day && t(v.day), PLACEHOLDER.day],
+    ' เดือน ',
+    ['month', v.month && MONTHS[v.month - 1], PLACEHOLDER.month],
+    ' พ.ศ.',
+    ['year', v.year && t(v.year), PLACEHOLDER.year],
+    `  เป็น|นัก|ศึกษา|วิชา|ทหาร ชั้น|ปี|ที่ ${t(C.trainingYear)}      ของ|สถาน|ศึกษา|วิชา|ทหาร  โรงเรียน|${C.school} ` +
+    `ปัจจุบัน|กำลัง|ศึกษา|อยู่|ใน|ระดับ|ชั้น|มัธยม|ศึกษา|ปี|ที่  ${t(C.gradeLevel)}   ` +
+    `ประจำ ปี|การ|ศึกษา ${t(C.academicYear)} จริง`,
+  ]];
+}
+
 function field(text, key, ph) {
   const s = document.createElement('span');
   s.textContent = text || ph;
@@ -109,8 +150,6 @@ function field(text, key, ph) {
   return s;
 }
 
-// ข้อความตายตัว: ช่องว่างคงไว้ตามต้นฉบับทุกตัว, "|" = จุดที่ตัดบรรทัดได้
-// (ตัดคำตามที่ Word ตัดในไฟล์ตัวอย่าง เช่น ไม่แยก "บัญชีรายชื่อ" "วิชาทหาร" ออกจากกัน)
 function words(str) {
   const f = document.createDocumentFragment();
   str.split(/( +)/).forEach((tok) => {
@@ -128,29 +167,22 @@ function words(str) {
 }
 
 function render() {
-  const v = read();
-  const t = toThai;
-  $('pBody').replaceChildren(
-    words('      หนังสือ|รับรอง|ฉบับนี้|ให้ไว้|เพื่อ|แสดงว่า นักศึกษา|วิชาทหาร '),
-    field(v.first, 'name', PLACEHOLDER.first),
-    '  ',
-    field(v.last, 'name', PLACEHOLDER.last),
-    words(' ลำดับ|ใน|บัญชีรายชื่อ  '),
-    field(v.no && t(v.no), 'no', PLACEHOLDER.no),
-    words('  หมายเลข|ประจำตัว|ประชาชน '),
-    field(v.id && t(groupId(v.id)), 'id', PLACEHOLDER.id),
-    words(' หมายเลข|ประจำตัว|นักศึกษา|วิชาทหาร '),
-    field(v.sid && t(v.sid), 'sid', PLACEHOLDER.sid),
-    words(' เกิดวันที่ '),
-    field(v.day && t(v.day), 'day', PLACEHOLDER.day),
-    words(' เดือน '),
-    field(v.month && MONTHS[v.month - 1], 'month', PLACEHOLDER.month),
-    words(' พ.ศ.'),
-    field(v.year && t(v.year), 'year', PLACEHOLDER.year),
-    words(`  เป็น|นักศึกษา|วิชาทหาร ชั้นปีที่ ${t(C.trainingYear)}      ของสถานศึกษาวิชาทหาร  โรงเรียน|${C.school} ` +
-          `ปัจจุบัน|กำลัง|ศึกษา|อยู่ใน|ระดับ|ชั้น|มัธยมศึกษา|ปีที่  ${t(C.gradeLevel)}   ` +
-          `ประจำ ปีการศึกษา ${t(C.academicYear)} จริง`),
-  );
+  const body = $('pBody');
+  const [line1, rest] = bodySegments(read()).map((segs, i) => {
+    const line = document.createElement('span');
+    line.className = i ? 'rest' : 'line1';
+    line.append(...segs.map((seg, j) => {
+      if (typeof seg !== 'string') return field(seg[1], seg[0], seg[2]);
+      // ช่องว่าง 6 ตัวต้นย่อหน้าอยู่ใน text-indent แล้ว (ไม่ให้ถูกยืดตอนจัดชิดขอบ) ส่วนไฟล์ Word ยังใช้ช่องว่างจริง
+      return words(i === 0 && j === 0 ? seg.trimStart() : seg);
+    }));
+    return line;
+  });
+  line1.append(document.createElement('wbr'));
+  body.classList.remove('flowing');
+  body.replaceChildren(line1, rest);
+  // ชื่อยาวจนล้นบรรทัดแรก: ถ้ายังขึ้นบรรทัดใหม่หลัง "ลำดับใน" Word จะยืด "ใน" เต็มบรรทัด จึงให้ไหลต่อกันแทน
+  if (line1.offsetHeight > parseFloat(getComputedStyle(body).lineHeight) * 1.5) body.classList.add('flowing');
 }
 
 /* ---------- ช่องกรอก ---------- */
@@ -180,6 +212,7 @@ $('btnReset').addEventListener('click', () => {
 });
 
 function setStatus(msg, bad) { el.status.textContent = msg; el.status.classList.toggle('bad', !!bad); }
+function setBusy(on) { el.btnPdf.disabled = on; el.btnPrint.disabled = on; }
 
 function checkBeforeExport() {
   const err = showErrors(true);
@@ -191,22 +224,20 @@ function checkBeforeExport() {
   return false;
 }
 
-/* ---------- พิมพ์ ---------- */
-el.btnPrint.addEventListener('click', () => {
-  if (!checkBeforeExport()) return;
-  setStatus('');
-  window.print();
-});
+/* ---------- สร้าง PDF ---------- */
+function toBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 
-/* ---------- ดาวน์โหลด PDF ---------- */
 let fontCssPromise;
 function fontEmbedCss() {
   fontCssPromise ||= Promise.all([
     ['fonts/THSarabunPSK.ttf', 400], ['fonts/THSarabunPSK-Bold.ttf', 700],
   ].map(async ([url, weight]) => {
     const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
-    let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-    return `@font-face{font-family:"TH SarabunPSK";font-weight:${weight};src:url(data:font/ttf;base64,${btoa(bin)}) format("truetype");}`;
+    return `@font-face{font-family:"TH SarabunPSK";font-weight:${weight};src:url(data:font/ttf;base64,${toBase64(buf)}) format("truetype");}`;
   })).then((r) => r.join('\n'));
   return fontCssPromise;
 }
@@ -234,40 +265,129 @@ function makePdf(jpeg, pxW, pxH, title) {
   const xref = len;
   add(`xref\n0 7\n0000000000 65535 f \n${offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`);
   add(`trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF`);
-  return new Blob(parts, { type: 'application/pdf' });
+  const out = new Uint8Array(len);
+  let o = 0;
+  parts.forEach((p) => { out.set(p, o); o += p.length; });
+  return out;
 }
 
 const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 
-async function download() {
-  if (!checkBeforeExport()) return;
-  const v = read();
-  el.btnPdf.disabled = true;
-  setStatus('กำลังสร้างไฟล์ PDF…');
+async function buildPdf(v) {
+  await document.fonts.ready;
+  const opts = { pixelRatio: 3, backgroundColor: '#fff', fontEmbedCSS: await fontEmbedCss(), cacheBust: false };
+  el.paper.classList.remove('show-hl');
   try {
-    await document.fonts.ready;
-    const opts = { pixelRatio: 3, backgroundColor: '#fff', fontEmbedCSS: await fontEmbedCss(), cacheBust: false };
-    el.paper.classList.remove('show-hl');
     if (isSafari) await htmlToImage.toCanvas(el.paper, opts); // Safari มักวาดรอบแรกว่าง
     const canvas = await htmlToImage.toCanvas(el.paper, opts);
     const jpg = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.95));
-    const name = `หนังสือรับรอง นศท. ${v.first} ${v.last}`;
-    const pdf = makePdf(new Uint8Array(await jpg.arrayBuffer()), canvas.width, canvas.height, name);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(pdf);
-    a.download = `${name}.pdf`;
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    setStatus('ดาวน์โหลดแล้ว ตรวจชื่อและตัวเลขในไฟล์อีกครั้งก่อนพิมพ์');
-  } catch (e) {
-    console.error(e);
-    setStatus('สร้าง PDF ไม่สำเร็จ ลองกดปุ่ม “พิมพ์” แล้วเลือก “บันทึกเป็น PDF” แทน', true);
+    return makePdf(new Uint8Array(await jpg.arrayBuffer()), canvas.width, canvas.height, `หนังสือรับรอง นศท. ${v.first} ${v.last}`);
   } finally {
     el.paper.classList.add('show-hl');
-    el.btnPdf.disabled = false;
   }
 }
-el.btnPdf.addEventListener('click', download);
+
+function saveToDevice(pdf, v) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }));
+  a.download = `หนังสือรับรอง นศท. ${v.first} ${v.last}.pdf`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+/* ---------- สร้าง Word จากแบบ assets/template.docx ---------- */
+const escapeXml = (s) => String(s).replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+async function makeDocx(v) {
+  const res = await fetch('assets/template.docx');
+  if (!res.ok) throw new Error(`template ${res.status}`);
+  const zip = await JSZip.loadAsync(await res.arrayBuffer());
+  const xml = await zip.file('word/document.xml').async('string');
+  const [bodyA, bodyB] = bodySegments(v).map((segs) =>
+    segs.map((seg) => (typeof seg === 'string' ? seg.replaceAll('|', '') : seg[1])).join(''));
+  const values = { ...FIXED, bodyA, bodyB };
+  const flowing = $('pBody').classList.contains('flowing');
+  const filled = (flowing ? xml.replace(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:br\/><\/w:r>/, '') : xml)
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => escapeXml(values[k]));
+  zip.file('word/document.xml', filled);
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+/* ---------- ส่งสำเนาเข้า Google Drive ---------- */
+let lastSent = '';
+
+// 'off' = ยังไม่ได้ตั้ง uploadUrl, 'sent' = ส่งสำเร็จ (รวมถึงข้อมูลชุดเดิมที่เพิ่งส่งไปแล้ว)
+async function sendCopies(v, pdf) {
+  if (!C.uploadUrl) return 'off';
+  const sig = JSON.stringify(v);
+  if (sig === lastSent) return 'sent';
+  const docx = await makeDocx(v);
+  // text/plain เพื่อไม่ให้เบราว์เซอร์ส่ง preflight ซึ่ง Apps Script ไม่รองรับ
+  const res = await fetch(C.uploadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ no: v.no, first: v.first, last: v.last, pdf: toBase64(pdf), docx: toBase64(docx) }),
+    signal: AbortSignal.timeout(90000),
+  });
+  const reply = await res.json();
+  if (!reply.ok) throw new Error(reply.error || 'upload failed');
+  lastSent = sig;
+  return 'sent';
+}
+
+const SEND_FAILED = 'ส่งสำเนาให้ครูไม่สำเร็จ กรุณากดอีกครั้ง หรือแจ้งครูผู้กำกับ';
+
+/* ---------- ปุ่มดาวน์โหลด ---------- */
+el.btnPdf.addEventListener('click', async () => {
+  if (!checkBeforeExport()) return;
+  const v = read();
+  setBusy(true);
+  setStatus('กำลังสร้างไฟล์ PDF…');
+  try {
+    let pdf;
+    try {
+      pdf = await buildPdf(v);
+      saveToDevice(pdf, v);
+    } catch (e) {
+      console.error(e);
+      setStatus('สร้าง PDF ไม่สำเร็จ ลองกดปุ่ม “พิมพ์” แล้วเลือก “บันทึกเป็น PDF” แทน', true);
+      return;
+    }
+    if (C.uploadUrl) setStatus('ดาวน์โหลดแล้ว กำลังส่งสำเนาให้ครู… อย่าเพิ่งปิดหน้านี้');
+    try {
+      const r = await sendCopies(v, pdf);
+      setStatus(r === 'sent'
+        ? 'ดาวน์โหลดแล้ว และส่งสำเนาให้ครูเรียบร้อย ตรวจชื่อและตัวเลขในไฟล์อีกครั้งก่อนพิมพ์'
+        : 'ดาวน์โหลดแล้ว ตรวจชื่อและตัวเลขในไฟล์อีกครั้งก่อนพิมพ์');
+    } catch (e) {
+      console.error(e);
+      setStatus(`ดาวน์โหลดแล้ว แต่${SEND_FAILED}`, true);
+    }
+  } finally {
+    setBusy(false);
+  }
+});
+
+/* ---------- ปุ่มพิมพ์ ---------- */
+el.btnPrint.addEventListener('click', async () => {
+  if (!checkBeforeExport()) return;
+  const v = read();
+  setStatus('');
+  if (C.uploadUrl) {
+    setBusy(true);
+    setStatus('กำลังส่งสำเนาให้ครู…');
+    try {
+      await sendCopies(v, await buildPdf(v));
+      setStatus('ส่งสำเนาให้ครูเรียบร้อย');
+    } catch (e) {
+      console.error(e);
+      setStatus(SEND_FAILED, true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  window.print();
+});
 
 /* ---------- ย่อตัวอย่างให้พอดีจอ ---------- */
 const stage = $('stage'), box = $('stageBox');
@@ -279,5 +399,6 @@ new ResizeObserver(fit).observe(stage);
 fit();
 
 render();
+document.fonts.ready.then(render); // วัดบรรทัดแรกใหม่เมื่อฟอนต์โหลดเสร็จ
 showErrors(false);
 })();

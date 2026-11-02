@@ -100,7 +100,12 @@ button:disabled { opacity: .6; cursor: progress; }
 .paper .flow { position: absolute; left: 72pt; top: 289.65pt; width: 445.4pt; }
 .paper .p { margin: 0 0 8pt; min-height: 19.5pt; white-space: pre-wrap; }
 .paper .empty { height: 19.5pt; }
-.paper .body { text-align: justify; text-indent: 36pt; }
+.paper .body { text-align: justify; }
+/* ย่อหน้า 36pt + ช่องว่าง 6 ตัวของต้นฉบับ (ตัวละ 0.216em) */
+.paper .line1 { display: block; text-indent: 56.74pt; text-align-last: justify; }
+.paper .rest { display: block; }
+.paper .flowing { text-indent: 56.74pt; }
+.paper .flowing .line1, .paper .flowing .rest { display: inline; }
 .paper .date { text-align: center; padding-left: 36pt; }
 .paper .sign1 { padding-left: 144pt; }
 .paper .sign2 { text-align: center; padding-left: 60.1pt; }
