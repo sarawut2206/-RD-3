@@ -66,6 +66,7 @@ input[readonly] { background: #f1f4f8; }
 .pick-search .primary { flex: none; }
 #pickList:empty { display: none; }
 .field.pick.off > label, .field.pick.off .pick-search, .field.pick.off select { display: none; }
+.field.loading .msg { color: var(--muted); }
 .chosen { margin: 8px 0 0; font-size: 1.2rem; font-weight: 700; color: var(--accent); }
 .chosen:empty { display: none; }
 .chosen.sent { color: var(--warn); }

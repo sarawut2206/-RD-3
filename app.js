@@ -108,7 +108,7 @@ function validate(v) {
   const err = {}, warn = {};
   if (fromRoster()) {
     if (!picked) err.pick = people ? 'กรุณากดค้นหาชื่อ แล้วกดเลือกชื่อของคุณ' : 'ยังโหลดรายชื่อไม่สำเร็จ กรุณากดลองใหม่ หรือแจ้งครูผู้กำกับ';
-    else if (lookup.state === 'checking') err.pick = 'กำลังดึงข้อมูลจากบัญชีรายชื่อ…';
+    else if (lookup.state === 'checking') err.pick = 'กำลังดึงข้อมูลของคุณ รอสักครู่ (ประมาณ 2-5 วินาที)…';
     else if (lookup.state !== 'found') err.pick = 'ดึงข้อมูลจากบัญชีรายชื่อไม่สำเร็จ กรุณากดเลือกชื่ออีกครั้ง หรือแจ้งครูผู้กำกับ';
   } else {
     if (v.id.length !== 13) err.id = `เลขประจำตัวประชาชนต้องมี 13 หลัก (ตอนนี้ ${v.id.length} หลัก)`;
@@ -136,7 +136,9 @@ function showErrors(showAll) {
     const k = f.dataset.f;
     const on = showAll || touched.has(k);
     const m = on ? (err[k] || warn[k] || '') : '';
-    f.classList.toggle('err', on && !!err[k]);
+    const loading = k === 'pick' && !!picked && lookup.state === 'checking'; // กำลังรอสคริปต์ ไม่ใช่ข้อผิดพลาด
+    f.classList.toggle('loading', loading);
+    f.classList.toggle('err', on && !!err[k] && !loading);
     f.classList.toggle('warn', on && !err[k] && !!warn[k]);
     f.querySelector('.msg').textContent = m;
   });
@@ -422,7 +424,7 @@ function showChosen() {
   c.classList.toggle('sent', !!picked?.done);
   c.textContent = !picked ? '' : picked.done
     ? `คุณเลือก: ${picked.name} · ชื่อนี้เคยส่งหนังสือแล้ว (ลำดับ ${picked.no}) ส่งซ้ำได้ ระบบจะเก็บไฟล์ใหม่เพิ่ม`
-    : `คุณเลือก: ${picked.name}`;
+    : `คุณเลือก: ${picked.name}${lookup.state === 'found' && lookup.key === picked.k ? '  ✓ ดึงข้อมูลแล้ว' : ''}`;
 }
 
 pickFilter.addEventListener('input', renderList);
@@ -449,6 +451,7 @@ pickFilter.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preve
 // ดึงเลขบัตรประชาชนและเลข นศท. ของคนที่เลือกจากบัญชีรายชื่อมาเติมในฟอร์ม
 async function fetchPick(key) {
   lookup = { key, state: 'checking' };
+  el.id.placeholder = el.sid.placeholder = 'กำลังดึงข้อมูล…';
   let state = 'error', r = null;
   try {
     r = await callScript({ action: 'pick', key });
@@ -458,11 +461,13 @@ async function fetchPick(key) {
   }
   if (lookup.key !== key) return; // นักเรียนกดเลือกคนอื่นไปแล้วระหว่างรอคำตอบ
   lookup = { key, state };
+  applyMode(); // คืน placeholder ปกติ
   if (state === 'found') {
     el.id.value = groupId(digitsOnly(r.id).slice(0, 13));
     el.sid.value = digitsOnly(r.sid);
     touched.add('id'); touched.add('sid');
   }
+  showChosen();
   render();
   showErrors(false);
 }
