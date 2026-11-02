@@ -625,7 +625,7 @@ function renderImportPreview(res) {
   box.replaceChildren();
   const add = (cls, text) => { const p = document.createElement('p'); p.className = cls; p.textContent = text; box.append(p); };
   admin.items = [];
-  if (!res) { $('btnImport').disabled = true; return; }
+  if (!res) { syncImportButton(); return; }
   if (!res.found) {
     add('bad', 'ไม่พบแถวหัวตาราง ต้องมีคำว่า "นศท", "ประชาชน" และ "ชื่อ" ในแถวเดียวกัน');
   } else {
@@ -650,7 +650,14 @@ function renderImportPreview(res) {
     }
   }
   if (res.found && !res.blocked && res.items.length) admin.items = res.items;
-  $('btnImport').disabled = !admin.items.length || !$('impLabel').value.trim();
+  syncImportButton();
+}
+
+// ปุ่มนำเข้ากดได้เมื่อรายชื่อผ่านการตรวจและมีชื่อชุด ถ้ายังไม่มีชื่อชุดให้บอกว่าติดตรงไหน
+function syncImportButton() {
+  const hasLabel = !!$('impLabel').value.trim();
+  $('btnImport').disabled = !admin.items.length || !hasLabel;
+  $('impNeedLabel').hidden = hasLabel || !admin.items.length;
 }
 
 async function decodeText(file) {
@@ -665,7 +672,13 @@ async function analyzeInput() {
     let sheets = null;
     if (file) sheets = /\.xlsx$/i.test(file.name) ? await readXlsx(await file.arrayBuffer()) : parseDelimited(await decodeText(file));
     else if (pasted) sheets = parseDelimited(pasted);
-    renderImportPreview(sheets ? analyzeRoster(sheets) : null);
+    const res = sheets ? analyzeRoster(sheets) : null;
+    // ยังไม่ได้ตั้งชื่อชุด: เสนอชื่อจากชื่อไฟล์ให้ (แก้ได้) ปุ่มนำเข้าจะได้ไม่ค้างเพราะลืมกรอก
+    if (res && res.items.length && !res.blocked && !$('impLabel').value.trim()) {
+      const stem = file ? file.name.replace(/\.[^.]+$/, '') : '';
+      $('impLabel').value = squash(stem.replace(/[_\[\]*?:\/\\]+/g, ' ')).slice(0, 30) || 'รายชื่อ นศท.';
+    }
+    renderImportPreview(res);
   } catch (e) {
     console.error(e);
     renderImportPreview(null);
@@ -710,7 +723,7 @@ $('adminLogin').addEventListener('submit', async (e) => {
 
 $('impFile').addEventListener('change', () => { if ($('impFile').files[0]) $('impText').value = ''; analyzeInput(); });
 $('impText').addEventListener('input', () => { if ($('impText').value) $('impFile').value = ''; analyzeInput(); });
-$('impLabel').addEventListener('input', () => { $('btnImport').disabled = !admin.items.length || !$('impLabel').value.trim(); });
+$('impLabel').addEventListener('input', syncImportButton);
 
 $('btnImport').addEventListener('click', async () => {
   const label = $('impLabel').value.trim(), n = admin.items.length;
