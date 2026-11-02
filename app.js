@@ -476,7 +476,38 @@ async function fetchPick(key) {
 let statusFilter = 'todo';
 const statusSearch = $('statusSearch');
 
+// แถบครูในหน้าสรุป: ยังไม่เข้าระบบ = ปุ่มพาไปใส่รหัส, เข้าแล้ว = มีปุ่มลบข้างชื่อคนที่กรอกแล้ว
+function renderStatusAdmin() {
+  const box = $('statusAdmin');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  if (admin.pin) {
+    btn.textContent = 'ออกจากโหมดครู';
+    btn.addEventListener('click', adminLogout);
+    box.replaceChildren('โหมดครู: กดปุ่ม "ลบ ให้กรอกใหม่" ข้างชื่อคนที่กรอกผิด ', btn);
+  } else {
+    btn.textContent = 'ครู: เข้าสู่ระบบเพื่อแก้ไข';
+    btn.addEventListener('click', () => showView('admin'));
+    box.replaceChildren(btn);
+  }
+}
+
+async function deleteSubmission(p) {
+  if (!confirm(`ลบข้อมูลที่ "${p.name}" ส่งไว้ (ลำดับ ${p.no}) ใช่หรือไม่?\nไฟล์ PDF และ Word ของคนนี้จะถูกย้ายไปถังขยะใน Drive (กู้คืนได้ 30 วัน) และนักเรียนกรอกใหม่ได้`)) return;
+  const hint = $('statusHint');
+  hint.textContent = `กำลังลบข้อมูลของ ${p.name}…`;
+  try {
+    const r = await adminCall('adminDelete', { key: p.k });
+    await loadPeople(true);
+    hint.textContent = r.trashed ? `ลบข้อมูลของ ${p.name} แล้ว (${r.trashed} โฟลเดอร์ ย้ายไปถังขยะใน Drive) ให้นักเรียนกรอกใหม่ได้` : `ไม่พบโฟลเดอร์ของ ${p.name} ใน Drive (อาจถูกลบไปแล้ว)`;
+  } catch (e) {
+    if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
+    hint.textContent = `ลบไม่สำเร็จ: ${String(e.message || e)}`;
+  }
+}
+
 function renderStatus() {
+  renderStatusAdmin();
   const list = $('statusList');
   if (!people) {
     $('statusHint').textContent = 'ยังโหลดรายชื่อไม่ได้ กดรีเฟรชเพื่อลองใหม่';
@@ -503,6 +534,12 @@ function renderStatus() {
     nm.className = 'nm'; nm.textContent = p.name;
     tag.className = 'tag'; tag.textContent = p.done ? `✓ กรอกแล้ว · ลำดับ ${p.no}` : 'ยังไม่กรอก';
     li.append(idx, nm, tag);
+    if (p.done && admin.pin) {
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'del'; del.textContent = 'ลบ ให้กรอกใหม่';
+      del.addEventListener('click', () => deleteSubmission(p));
+      li.append(del);
+    }
     return li;
   }));
 }
@@ -529,6 +566,15 @@ if (ROSTER) $('tabs').hidden = false;
 const admin = { pin: '', items: [] };
 
 const adminCall = (action, extra) => callScript({ action, pin: admin.pin, ...extra });
+
+function adminLogout() {
+  admin.pin = '';
+  $('adminBody').hidden = true;
+  $('adminLogin').hidden = false;
+  $('adminPin').value = '';
+  $('adminLoginMsg').textContent = '';
+  renderStatus();
+}
 const maskId = (id) => `${id[0]} xxxx xxxxx xx ${id[12]}`;
 const HEADER_RE = { id: /ประชาชน/, sid: /นศท/, name: /ชื่อ/ };
 
@@ -718,6 +764,7 @@ $('adminLogin').addEventListener('submit', async (e) => {
     renderAdminInfo(await adminCall('adminInfo'));
     $('adminBody').hidden = false;
     $('adminLogin').hidden = true;
+    renderStatus(); // หน้าสรุปจะมีปุ่มลบให้ครู
   } catch (err) {
     admin.pin = '';
     msg.textContent = /Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err);

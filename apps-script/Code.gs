@@ -20,7 +20,7 @@ const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 const CACHE_SECONDS = 20;
 
 // ใช้เช็กว่าลิงก์ /exec รันโค้ดรุ่นไหน: เปิดลิงก์แล้วดูค่า version
-const VERSION = 'admin-import-1';
+const VERSION = 'admin-import-2';
 
 function doGet() {
   try {
@@ -37,6 +37,7 @@ function doPost(e) {
     // หน้าสำหรับครู (ต้องมีรหัสครู) ทำก่อนอ่านรายชื่อ เพราะใช้นำเข้ารายชื่อตอนที่ยังไม่มีรายชื่อได้
     if (d.action === 'adminInfo') { requireAdmin_(d.pin); return reply_(adminInfo_()); }
     if (d.action === 'adminImport') { requireAdmin_(d.pin); return reply_(importRoster_(d)); }
+    if (d.action === 'adminDelete') { requireAdmin_(d.pin); return reply_(deleteSubmission_(d)); }
 
     // รายชื่อให้นักเรียนกดเลือก + ใครส่งแล้ว: ส่งเฉพาะชื่อ ไม่ส่งเลขบัตรหรือเลข นศท.
     if (d.action === 'list') return reply_(listPayload_());
@@ -214,6 +215,29 @@ function importRoster_(d) {
   return Object.assign(adminInfo_(), { imported: rows.length, tab: label });
 }
 
+// ครูลบข้อมูลที่นักเรียนกรอกผิด: ย้ายโฟลเดอร์ "ลำดับ ชื่อ นามสกุล" ของคนนั้นไปถังขยะใน Drive (กู้คืนได้ 30 วัน)
+// ทำให้สถานะกลับเป็น "ยังไม่กรอก" และนักเรียนกรอกใหม่ได้ ชื่อโฟลเดอร์ต้องตรงกับชื่อในรายชื่อทุกตัวอักษร
+function deleteSubmission_(d) {
+  const student = loadRoster_().filter(function (x) { return x.key === String(d.key); })[0];
+  if (!student) throw new Error('ไม่พบรายชื่อนี้');
+  const want = (student.first + ' ' + student.last).replace(/\s+/g, ' ').trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  let trashed = 0;
+  try {
+    const it = rootFolder_().getFolders();
+    while (it.hasNext()) {
+      const f = it.next();
+      const m = /^(\d{3}) (.+)$/.exec(f.getName());
+      if (m && m[2].replace(/\s+/g, ' ').trim() === want) { f.setTrashed(true); trashed++; }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  CacheService.getScriptCache().remove('list');
+  return { ok: true, trashed: trashed, name: want };
+}
+
 /* ---------- บัญชีรายชื่อ ---------- */
 
 // คืนอาร์เรย์ [{ key, id, sid, first, last }] เรียงตามชีต; key = "แท็บ-แถว" ใช้อ้างอิงคนในหน้าเว็บโดยไม่เปิดเผยเลขบัตร
@@ -305,7 +329,11 @@ function decode_(b64, magic) {
 
 function subfolder_(parent, name) {
   const found = parent.getFoldersByName(name);
-  return found.hasNext() ? found.next() : parent.createFolder(name);
+  while (found.hasNext()) {
+    const f = found.next();
+    if (!f.isTrashed()) return f; // โฟลเดอร์ที่ครูลบไปแล้วไม่นำกลับมาใช้
+  }
+  return parent.createFolder(name);
 }
 
 // ไม่ทับไฟล์เดิม: ถ้าชื่อซ้ำจะเติมเวลาที่ส่งต่อท้าย
