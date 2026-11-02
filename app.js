@@ -422,9 +422,32 @@ function renderList() {
 function showChosen() {
   const c = $('pickChosen');
   c.classList.toggle('sent', !!picked?.done);
-  c.textContent = !picked ? '' : picked.done
+  // เลือกชื่อแล้ว: ซ่อนช่องค้นหาและรายชื่อคนอื่น เหลือแค่ชื่อที่เลือกกับปุ่มเปลี่ยนชื่อ
+  c.closest('.field').classList.toggle('has-pick', !!picked && !manual);
+  if (!picked) { c.replaceChildren(); return; }
+  const text = document.createElement('span');
+  text.textContent = picked.done
     ? `คุณเลือก: ${picked.name} · ชื่อนี้เคยส่งหนังสือแล้ว (ลำดับ ${picked.no}) ส่งซ้ำได้ ระบบจะเก็บไฟล์ใหม่เพิ่ม`
     : `คุณเลือก: ${picked.name}${lookup.state === 'found' && lookup.key === picked.k ? '  ✓ ดึงข้อมูลแล้ว' : ''}`;
+  const change = document.createElement('button');
+  change.type = 'button'; change.id = 'btnChangeName'; change.textContent = 'เปลี่ยนชื่อ';
+  change.addEventListener('click', changeName);
+  c.replaceChildren(text, change);
+}
+
+// เลือกชื่อผิด: ล้างข้อมูลที่ดึงมา แล้วกลับไปเลือกใหม่
+function changeName() {
+  picked = null;
+  lookup = { key: '', state: 'idle' };
+  [el.first, el.last, el.sid, el.id].forEach((i) => { i.value = ''; });
+  touched.delete('pick'); touched.delete('id'); touched.delete('sid');
+  pickFilter.value = '';
+  applyMode();
+  showChosen();
+  renderList();
+  render();
+  showErrors(false);
+  pickFilter.focus();
 }
 
 pickFilter.addEventListener('input', renderList);
