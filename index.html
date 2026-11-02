@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ออกหนังสือรับรอง นศท.</title>
+<meta name="description" content="กรอกข้อมูลนักศึกษาวิชาทหาร แล้วดาวน์โหลดหนังสือรับรองเป็น PDF พร้อมพิมพ์">
+<link rel="icon" href="assets/garuda.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="assets/garuda.png" alt="" width="34" height="36">
+    <div>
+      <h1>ออกหนังสือรับรอง นักศึกษาวิชาทหาร</h1>
+      <p id="schoolLine"></p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap layout">
+
+  <section class="panel" aria-labelledby="formTitle">
+    <h2 id="formTitle">กรอกข้อมูลของนักเรียน</h2>
+    <p class="lead">ช่องที่กรอกจะแสดงเป็นแถบเหลืองในตัวอย่างทางขวา (แถบเหลืองจะไม่ติดไปในไฟล์ PDF)</p>
+
+    <form id="form" novalidate autocomplete="off">
+
+      <div class="row two">
+        <div class="field" data-f="first">
+          <label for="first">ชื่อ</label>
+          <input id="first" type="text" placeholder="เช่น สืบวงศ์" maxlength="40" autocomplete="off">
+          <p class="msg" role="alert"></p>
+        </div>
+        <div class="field" data-f="last">
+          <label for="last">นามสกุล</label>
+          <input id="last" type="text" placeholder="เช่น เทพโสธร" maxlength="40" autocomplete="off">
+          <p class="msg" role="alert"></p>
+        </div>
+      </div>
+
+      <div class="field" data-f="no">
+        <label for="no">ลำดับในบัญชีรายชื่อ</label>
+        <input id="no" type="text" inputmode="numeric" placeholder="เช่น 22" maxlength="3" autocomplete="off">
+        <p class="msg" role="alert"></p>
+      </div>
+
+      <div class="field" data-f="id">
+        <label for="id">เลขประจำตัวประชาชน (13 หลัก)</label>
+        <input id="id" type="text" inputmode="numeric" placeholder="1 1023 00098 86 2" maxlength="17" autocomplete="off">
+        <p class="hint">พิมพ์ติดกันได้เลย ระบบจะเว้นวรรคให้ตามแบบหนังสือ</p>
+        <p class="msg" role="alert"></p>
+      </div>
+
+      <div class="field" data-f="sid">
+        <label for="sid">เลขประจำตัวนักศึกษาวิชาทหาร (9 หลัก)</label>
+        <input id="sid" type="text" inputmode="numeric" placeholder="011334220" maxlength="9" autocomplete="off">
+        <p class="msg" role="alert"></p>
+      </div>
+
+      <fieldset class="field" data-f="birth">
+        <legend>วัน เดือน ปีเกิด</legend>
+        <div class="row three">
+          <select id="day" aria-label="วันที่เกิด"></select>
+          <select id="month" aria-label="เดือนเกิด"></select>
+          <select id="year" aria-label="ปีเกิด พ.ศ."></select>
+        </div>
+        <p class="msg" role="alert"></p>
+      </fieldset>
+
+      <div class="actions">
+        <button type="button" id="btnPdf" class="primary">ดาวน์โหลด PDF</button>
+        <button type="button" id="btnPrint">พิมพ์</button>
+        <button type="button" id="btnReset" class="ghost">ล้างข้อมูล</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </form>
+
+    <p class="privacy">ข้อมูลถูกประมวลผลในเครื่องของคุณเท่านั้น ไม่ถูกส่งไปที่ใด และไม่ถูกบันทึกไว้เมื่อปิดหน้าเว็บ</p>
+  </section>
+
+  <section class="preview" aria-label="ตัวอย่างหนังสือรับรอง">
+    <div class="stage" id="stage">
+      <div class="stage-box" id="stageBox">
+        <div class="scaler">
+
+          <article class="paper show-hl" id="paper">
+            <img class="garuda" src="assets/garuda.png" alt="">
+            <div class="h title">หนังสือรับรอง</div>
+            <div class="h school" id="pSchool"></div>
+            <div class="h dashes">--------------------------------------------------------</div>
+
+            <div class="flow">
+              <p class="p body" id="pBody"></p>
+              <p class="p empty"></p>
+              <p class="p date" id="pDate"></p>
+              <p class="p empty"></p>
+              <p class="p sign1">    (ลงชื่อ)  </p>
+              <p class="p sign2" id="pSigner"></p>
+              <p class="p sign3" id="pTitle"></p>
+              <div class="gap"></div>
+              <p class="p phone" id="pPhone"></p>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="config.js"></script>
+<script src="vendor/html-to-image.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

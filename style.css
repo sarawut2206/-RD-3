@@ -1,0 +1,132 @@
+@font-face { font-family: "TH SarabunPSK"; src: url("fonts/THSarabunPSK.ttf") format("truetype"); font-weight: 400; font-display: block; }
+@font-face { font-family: "TH SarabunPSK"; src: url("fonts/THSarabunPSK-Bold.ttf") format("truetype"); font-weight: 700; font-display: block; }
+
+:root {
+  --ink: #1b2430;
+  --muted: #5d6877;
+  --line: #d5dbe3;
+  --bg: #eef1f5;
+  --card: #fff;
+  --accent: #1f4e79;
+  --accent-ink: #fff;
+  --bad: #b3261e;
+  --warn: #8a5a00;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 21px/1.45 "TH SarabunPSK", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- UI ---------- */
+.top { background: var(--accent); color: var(--accent-ink); }
+.top .wrap { display: flex; align-items: center; gap: 12px; padding-top: 10px; padding-bottom: 10px; }
+.top img { background: #fff; border-radius: 6px; padding: 2px; }
+.top h1 { margin: 0; font-size: 1.35rem; line-height: 1.2; }
+.top p { margin: 0; opacity: .85; font-size: .95rem; }
+
+.layout { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 24px; padding-top: 20px; padding-bottom: 40px; align-items: start; }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.panel h2 { margin: 0 0 2px; font-size: 1.3rem; }
+.lead { margin: 0 0 14px; color: var(--muted); font-size: .95rem; }
+
+.field { margin: 0 0 14px; padding: 0; border: 0; min-width: 0; }
+.field label, .field legend { display: block; font-weight: 700; margin-bottom: 4px; padding: 0; }
+.row { display: grid; gap: 10px; }
+.row.two { grid-template-columns: 1fr 1fr; }
+.row.three { grid-template-columns: 1fr 1.6fr 1.1fr; }
+
+input, select {
+  width: 100%;
+  font: inherit;
+  padding: 7px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  min-height: 44px;
+}
+input:focus, select:focus, button:focus-visible { outline: 3px solid #9cc2e6; outline-offset: 1px; border-color: var(--accent); }
+.field.err input, .field.err select { border-color: var(--bad); }
+.field.warn input { border-color: #d49a1a; }
+
+.hint { margin: 3px 0 0; color: var(--muted); font-size: .9rem; }
+.msg { margin: 3px 0 0; min-height: 0; font-size: .95rem; color: var(--bad); }
+.msg:empty { display: none; }
+.field.warn .msg { color: var(--warn); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+button {
+  font: inherit; font-weight: 700;
+  min-height: 46px; padding: 6px 18px;
+  border-radius: 8px; border: 1.5px solid var(--accent);
+  background: #fff; color: var(--accent); cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-ink); flex: 1 1 180px; }
+button.ghost { border-color: var(--line); color: var(--muted); font-weight: 400; }
+button:disabled { opacity: .6; cursor: progress; }
+
+.status { margin: 10px 0 0; min-height: 1.4em; color: var(--muted); font-size: .95rem; }
+.status.bad { color: var(--bad); }
+.privacy { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .88rem; }
+
+.preview { min-width: 0; }
+.stage { position: sticky; top: 12px; }
+.stage-box { --s: 1; width: calc(793.7px * var(--s)); height: calc(1122.5px * var(--s)); margin: 0 auto; box-shadow: 0 2px 14px rgba(20, 30, 50, .22); background: #fff; }
+.scaler { width: 210mm; height: 297mm; transform: scale(var(--s)); transform-origin: top left; }
+
+/* ---------- กระดาษ A4 (ตำแหน่งวัดจากไฟล์ตัวอย่าง: ขอบซ้าย 72pt ขอบขวา 77.9pt) ---------- */
+.paper {
+  position: relative;
+  width: 210mm; height: 297mm;
+  overflow: hidden;
+  background: #fff; color: #000;
+  font: 400 16pt/19.5pt "TH SarabunPSK", sans-serif;
+  font-kerning: normal;
+}
+.paper .garuda { position: absolute; left: 236.9pt; top: 72pt; width: 115.4pt; height: auto; display: block; }
+.paper .h { position: absolute; left: 72pt; width: 445.4pt; text-align: center; white-space: pre; line-height: 1.1; }
+.paper .title  { top: 206.4pt; font-size: 20pt; font-weight: 700; }
+.paper .school { top: 239.4pt; font-size: 18pt; }
+.paper .dashes { top: 268.2pt; font-size: 11pt; }
+
+.paper .flow { position: absolute; left: 72pt; top: 289.65pt; width: 445.4pt; }
+.paper .p { margin: 0 0 8pt; min-height: 19.5pt; white-space: pre-wrap; }
+.paper .empty { height: 19.5pt; }
+.paper .body { text-align: justify; text-indent: 36pt; }
+.paper .date { text-align: center; padding-left: 36pt; }
+.paper .sign1 { padding-left: 144pt; }
+.paper .sign2 { text-align: center; padding-left: 60.1pt; }
+.paper .sign3 { text-align: center; padding-left: 42.6pt; }
+.paper .gap { height: 150pt; }
+.paper .u { white-space: pre; }   /* คำที่ห้ามตัดกลางคำ ตัดบรรทัดได้เฉพาะที่ <wbr> หรือช่องว่าง */
+
+.paper .ph { color: #8a8f98; }
+.paper.show-hl .hl { background: #ffeb3b; }
+
+/* ---------- มือถือ ---------- */
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .stage { position: static; }
+  .row.two { grid-template-columns: 1fr; }
+  .row.three { grid-template-columns: 1fr 1.5fr 1fr; }
+}
+
+/* ---------- พิมพ์ ---------- */
+@page { size: A4; margin: 0; }
+@media print {
+  html, body { background: #fff; }
+  .top, .panel { display: none !important; }
+  .wrap, .layout { display: block; max-width: none; margin: 0; padding: 0; }
+  .stage { position: static; }
+  .stage-box { width: 210mm; height: 297mm; box-shadow: none; margin: 0; }
+  .scaler { transform: none; }
+  .paper .hl { background: none !important; }
+}
