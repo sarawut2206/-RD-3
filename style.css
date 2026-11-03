@@ -212,10 +212,56 @@ button:disabled { opacity: .6; cursor: progress; }
 .paper .ph { color: #8a8f98; }
 .paper.show-hl .hl { background: #ffeb3b; }
 
+/* ---------- แดชบอร์ดพิมพ์ ---------- */
+.dash { margin: 20px auto 40px; max-width: 1000px; }
+.dash-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dash-head h2 { margin: 0; }
+.dash-head .hint { flex: 1; }
+.dash-head button { min-height: 36px; padding: 0 14px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0 12px; }
+.kpi { display: flex; flex-direction: column; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; }
+.kpi .k-l { color: var(--muted); font-size: 1rem; }
+.kpi b { font-size: 2.2rem; line-height: 1.15; }
+.kpi .k-s { color: var(--muted); font-size: .9rem; }
+.kpi.ok b { color: #1b5e20; }
+.kpi.todo b { color: var(--bad); }
+.kpi.wait b, .kpi.printed b { color: var(--accent); }
+.kpi.lock b { color: var(--muted); }
+.stack { display: flex; height: 16px; background: var(--line); border-radius: 8px; overflow: hidden; }
+.stack i { display: block; height: 100%; transition: width .4s; }
+.stack .ok, .stack .printed, .sw.ok, .sw.printed { background: #2e7d32; }
+.stack .wait, .sw.wait { background: var(--accent); }
+.stack .todo, .sw.todo { background: #e8a39d; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; padding: 0; color: var(--muted); font-size: 1rem; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; }
+.alerts { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; color: var(--warn); font-size: 1rem; }
+.alerts li { padding: 4px 12px; border-radius: 8px; background: #fff3e0; }
+.alerts li.good { background: #e3f3e4; color: #1b5e20; }
+.dash-admin { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.dash-admin .docs-tools { margin: 8px 0; }
+.dash-cols { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; align-items: start; margin-top: 8px; }
+.col-h { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 1.15rem; }
+.col-h button { min-height: 30px; padding: 0 12px; margin-left: auto; font-size: .95rem; }
+.col-h .all { margin-left: auto; font-weight: 400; font-size: .95rem; color: var(--muted); }
+.todo-h { color: var(--bad); }
+.ok-h { color: #1b5e20; }
+.status-list .empty { color: var(--muted); justify-content: center; border-style: dashed; }
+.status-list .tag.wait { background: #e3edf7; color: var(--accent); }
+.status-list .tag.warn { background: #fff3e0; color: var(--warn); }
+.status-list .when { flex: none; color: var(--muted); font-size: .9rem; }
+.status-list .chk { flex: none; width: 20px; height: 20px; margin: 0; }
+.status-list .old-tag { margin-left: 0; }
+
 /* ---------- มือถือ ---------- */
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .stage { position: static; }
+  .dash-cols { grid-template-columns: 1fr; }
+  .tabs .wrap { gap: 4px; padding-left: 8px; padding-right: 8px; }
+  .tabs button { padding: 2px 4px; font-size: .9rem; line-height: 1.2; }
+  .tabs button.teacher { flex: 1 1 0; margin-left: 0; }
+  .tabs .count { display: block; }
+  .status-list li { flex-wrap: wrap; }
   .row.two { grid-template-columns: 1fr; }
   .row.three { grid-template-columns: 1fr 1.5fr 1fr; }
 }
@@ -224,7 +270,7 @@ button:disabled { opacity: .6; cursor: progress; }
 @page { size: A4; margin: 0; }
 @media print {
   html, body { background: #fff; }
-  .top, .panel, .tabs, #viewStatus, #viewAdmin { display: none !important; }
+  .top, .panel, .tabs, #viewStatus, #viewDash, #viewAdmin { display: none !important; }
   .wrap, .layout { display: block; max-width: none; margin: 0; padding: 0; }
   .stage { position: static; }
   .stage-box { width: 210mm; height: 297mm; box-shadow: none; margin: 0; }

@@ -102,6 +102,7 @@ function idChecksumOk(id) {
 /* ---------- ตรวจข้อมูล ---------- */
 let lookup = { key: '', state: 'idle' };
 let people = null;  // [{ k, first, last, name }] จากบัญชีรายชื่อ
+let peopleAt = null; // เวลาที่โหลดรายชื่อล่าสุดสำเร็จ
 let picked = null;  // คนที่นักเรียนกดเลือก
 
 function validate(v) {
@@ -465,6 +466,7 @@ async function loadPeople(silent) {
     people = r.list
       .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`), done: !!p.done, no: p.no || '' }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+    peopleAt = new Date();
     if (manual) { // โหลดได้แล้ว กลับมาใช้โหมดกดเลือกชื่อ และล้างสิ่งที่พิมพ์เองไว้
       manual = false; picked = null; lookup = { key: '', state: 'idle' };
       [el.first, el.last, el.sid, el.id].forEach((i) => { i.value = ''; });
@@ -630,20 +632,24 @@ const confirmOld = (list) => {
 };
 
 // แถบครูในหน้าสรุป: ยังไม่เข้าระบบ = ช่องใส่รหัสครู, เข้าแล้ว = ปุ่มพิมพ์ทั้งหมด + ปุ่มพิมพ์/ลบข้างชื่อคนที่กรอกแล้ว
+function adminLoginForm(text) {
+  const form = el$('form', { autocomplete: 'off' });
+  const pin = el$('input', { type: 'password', placeholder: 'รหัสครู', autocomplete: 'off', ariaLabel: 'รหัสครู' });
+  const go = el$('button', { type: 'submit' }, 'เข้าสู่ระบบ');
+  const msg = el$('span', { className: 'bad' });
+  form.append(text, pin, go, msg);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    go.disabled = true; msg.textContent = '';
+    try { await adminLogin(pin.value); } catch (err) { msg.textContent = loginError(err); go.disabled = false; }
+  });
+  return form;
+}
+
 function renderStatusAdmin() {
   const box = $('statusAdmin');
   if (!admin.pin) {
-    const form = el$('form', { autocomplete: 'off' });
-    const pin = el$('input', { type: 'password', placeholder: 'รหัสครู', autocomplete: 'off', ariaLabel: 'รหัสครู' });
-    const go = el$('button', { type: 'submit' }, 'เข้าสู่ระบบ');
-    const msg = el$('span', { className: 'bad' });
-    form.append('ครู: ใส่รหัสเพื่อพิมพ์หรือแก้ไข ', pin, go, msg);
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      go.disabled = true; msg.textContent = '';
-      try { await adminLogin(pin.value); } catch (err) { msg.textContent = loginError(err); go.disabled = false; }
-    });
-    box.replaceChildren(form);
+    box.replaceChildren(adminLoginForm('ครู: ใส่รหัสเพื่อพิมพ์หรือแก้ไข '));
     return;
   }
   const ready = docs.filter((d) => d.pdf).length;
@@ -666,7 +672,7 @@ function renderStatusAdmin() {
 
 // พิมพ์: ดึง PDF ที่นักเรียนส่งมา เอารูปหนังสือมาวางทีละหน้า A4 แล้วเรียกหน้าต่างพิมพ์ของเบราว์เซอร์
 async function printDocs(list, btn) {
-  const hint = $('statusHint');
+  const hint = { set textContent(t) { $('statusHint').textContent = t; $('dashMsg').textContent = t; } }; // แสดงทั้งหน้าสรุปและแดชบอร์ด
   if (!list.length) { hint.textContent = 'ไม่มีเอกสารให้พิมพ์'; return; }
   if (btn) btn.disabled = true;
   const urls = [];
@@ -686,6 +692,7 @@ async function printDocs(list, btn) {
       area.replaceChildren();
       urls.forEach((u) => URL.revokeObjectURL(u));
       window.removeEventListener('afterprint', cleanup);
+      setPrinted(list, true);
     };
     window.addEventListener('afterprint', cleanup);
     hint.textContent = `ส่งไปหน้าต่างพิมพ์แล้ว ${list.length} ฉบับ เรียงตามเลขที่ ${+list[0].no}${list.length > 1 ? ` ถึง ${+list[list.length - 1].no}` : ''}`;
@@ -717,6 +724,7 @@ async function deleteSubmission(p) {
 
 function renderStatus() {
   renderStatusAdmin();
+  renderDash();
   const list = $('statusList');
   if (!people) {
     $('statusHint').textContent = 'ยังโหลดรายชื่อไม่ได้ กดรีเฟรชเพื่อลองใหม่';
@@ -762,9 +770,10 @@ function renderStatus() {
 function showView(name) {
   $('viewForm').hidden = name !== 'form';
   $('viewStatus').hidden = name !== 'status';
+  $('viewDash').hidden = name !== 'dash';
   $('viewAdmin').hidden = name !== 'admin';
   document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
-  if (name === 'status') loadPeople(true);
+  if (name === 'status' || name === 'dash') loadPeople(true);
 }
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
 document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
@@ -774,7 +783,7 @@ document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('clic
 }));
 statusSearch.addEventListener('input', renderStatus);
 $('btnRefresh').addEventListener('click', () => loadPeople(true));
-setInterval(() => { if (ROSTER && !$('viewStatus').hidden && !document.hidden) loadPeople(true); }, 60000);
+setInterval(() => { if (ROSTER && (!$('viewStatus').hidden || !$('viewDash').hidden) && !document.hidden) loadPeople(true); }, 60000);
 if (ROSTER) $('tabs').hidden = false;
 
 /* ---------- สำหรับครู: นำเข้ารายชื่อ (ต้องใส่รหัสครู) ---------- */
@@ -1096,6 +1105,224 @@ $('btnDocsMerge').addEventListener('click', mergeDocs);
 $('btnDocsOld').addEventListener('click', () => deleteOldDocs($('btnDocsOld')));
 $('btnDocsReload').addEventListener('click', loadDocs);
 ['docFrom', 'docTo'].forEach((id) => $(id).addEventListener('input', () => { $(id).value = digitsOnly($(id).value).slice(0, 3); }));
+
+/* ---------- แดชบอร์ดพิมพ์: สรุปคนกรอก/ยังไม่กรอก และสถานะการพิมพ์ ---------- */
+// สถานะ "พิมพ์แล้ว" จำในเบราว์เซอร์ของครู (เบราว์เซอร์ไม่บอกว่ากระดาษออกจริงไหม) จึงมีปุ่มยกเลิกที่ติ๊ก
+const PRINTED_KEY = `nsd-printed-${C.academicYear}`;
+let printed = {};
+try { printed = JSON.parse(localStorage.getItem(PRINTED_KEY)) || {}; } catch (e) { /* เก็บไม่ได้ ก็ใช้แค่ในหน้านี้ */ }
+const docKey = (d) => `${d.no}|${d.name}`;
+// new = ยังไม่พิมพ์, done = พิมพ์แล้ว, changed = นักเรียนส่งไฟล์ใหม่หลังจากที่พิมพ์ไปแล้ว
+function printState(d) {
+  const r = printed[docKey(d)];
+  if (!r) return 'new';
+  return d.at && r.doc && new Date(d.at) > new Date(r.doc) ? 'changed' : 'done';
+}
+function setPrinted(list, on) {
+  const now = new Date().toISOString();
+  list.forEach((d) => { if (on) printed[docKey(d)] = { at: now, doc: d.at }; else delete printed[docKey(d)]; });
+  try { localStorage.setItem(PRINTED_KEY, JSON.stringify(printed)); } catch (e) { /* เก็บไม่ได้ ก็ใช้แค่ในหน้านี้ */ }
+  renderDash();
+}
+
+let dashFilter = 'all';
+let dashVisible = []; // เอกสารที่เลือกได้ในรายการที่กรองอยู่ ใช้กับ "เลือกทั้งหมด"
+const dashSel = new Set();
+const dashSearch = $('dashSearch');
+const byNo = (a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : 0);
+const dashWhen = (iso) => new Date(iso).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function kpi(label, value, sub, cls = '') {
+  const d = el$('div', { className: `kpi ${cls}` });
+  d.append(el$('span', { className: 'k-l' }, label), el$('b', {}, value), el$('span', { className: 'k-s' }, sub || ''));
+  return d;
+}
+
+function renderDash() {
+  const teacher = !!admin.pin;
+  const known = teacher && !docsLoading; // ครูเข้าระบบและโหลดรายการเอกสารแล้ว จึงรู้ว่าใครมีไฟล์พร้อมพิมพ์
+  $('dashAt').textContent = peopleAt ? `อัปเดต ${peopleAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : '';
+
+  const login = $('dashLogin');
+  if (teacher) login.replaceChildren();
+  else if (!login.firstChild) login.replaceChildren(adminLoginForm('ครู: ใส่รหัสเพื่อดูสถานะการพิมพ์และสั่งพิมพ์ '));
+  $('dashTools').hidden = !teacher;
+
+  if (!people) {
+    ['dashKpis', 'dashBar', 'dashLegend', 'dashTodo', 'dashDone'].forEach((id) => $(id).replaceChildren());
+    $('dashAlerts').replaceChildren(el$('li', {}, 'ยังโหลดรายชื่อไม่ได้ กดรีเฟรชเพื่อลองใหม่'));
+    return;
+  }
+
+  const total = people.length;
+  const doneP = people.filter((p) => p.done).sort(byNo);
+  const todoP = people.filter((p) => !p.done);
+  const pct = total ? Math.round((doneP.length * 100) / total) : 0;
+
+  const noCount = {};
+  docs.forEach((d) => { noCount[d.no] = (noCount[d.no] || 0) + 1; });
+  const rows = doneP.map((p) => {
+    const doc = docOf(p);
+    const fl = [];
+    if (known) {
+      if (!doc) fl.push('missing');
+      else {
+        if (isOld(doc)) fl.push('old');
+        if (noCount[doc.no] > 1) fl.push('dup');
+        if (printState(doc) === 'changed') fl.push('changed');
+      }
+    }
+    return { p, doc, st: known && doc ? printState(doc) : '', fl };
+  });
+  const printedN = rows.filter((r) => r.st === 'done').length;
+  const waitN = doneP.length - printedN;
+  const printable = rows.filter((r) => r.doc);
+
+  // ตัวเลขสรุป
+  const cards = [
+    kpi('ทั้งหมด', total, 'คนในบัญชีรายชื่อ'),
+    kpi('กรอกแล้ว', doneP.length, `${pct}% ของทั้งหมด`, 'ok'),
+    kpi('ยังไม่กรอก', todoP.length, todoP.length ? 'ต้องตามเพิ่ม' : 'ครบทุกคน', 'todo'),
+  ];
+  if (known) cards.push(kpi('รอพิมพ์', waitN, 'กรอกแล้วแต่ยังไม่ได้พิมพ์', 'wait'), kpi('พิมพ์แล้ว', printedN, `จากที่กรอกแล้ว ${doneP.length} คน`, 'printed'));
+  else cards.push(kpi('สถานะการพิมพ์', docsLoading ? '…' : '🔒', docsLoading ? 'กำลังโหลดเอกสาร' : 'ครูใส่รหัสด้านล่างเพื่อดู', 'lock'));
+  $('dashKpis').replaceChildren(...cards);
+  $('tabPrint').textContent = known ? `${printedN}/${doneP.length}` : '';
+
+  // แถบสัดส่วน
+  const segs = known
+    ? [['พิมพ์แล้ว', printedN, 'printed'], ['รอพิมพ์', waitN, 'wait'], ['ยังไม่กรอก', todoP.length, 'todo']]
+    : [['กรอกแล้ว', doneP.length, 'ok'], ['ยังไม่กรอก', todoP.length, 'todo']];
+  $('dashBar').replaceChildren(...segs.filter(([, n]) => n).map(([label, n, cls]) =>
+    el$('i', { className: cls, title: `${label} ${n} คน`, style: `width:${(n * 100) / total}%` })));
+  $('dashLegend').replaceChildren(...segs.map(([label, n, cls]) => {
+    const li = el$('li', {}, `${label} ${n}`);
+    li.prepend(el$('span', { className: `sw ${cls}` }));
+    return li;
+  }));
+
+  // รายการที่ต้องตรวจก่อนพิมพ์
+  const alerts = [];
+  if (teacher && docsLoading) alerts.push('กำลังโหลดรายการเอกสารจาก Drive…');
+  if (known) {
+    const olds = rows.filter((r) => r.fl.includes('old')).length;
+    const dups = Object.keys(noCount).filter((k) => noCount[k] > 1).map((k) => +k);
+    const miss = rows.filter((r) => r.fl.includes('missing')).length;
+    const chg = rows.filter((r) => r.fl.includes('changed')).length;
+    if (olds) alerts.push(`⚠ แบบเก่า ${olds} ฉบับ (ส่งก่อนปรับฟอร์ม) ลบให้กรอกใหม่ได้ที่แท็บ "ใครกรอกแล้วบ้าง"`);
+    if (dups.length) alerts.push(`⚠ เลขที่ซ้ำกัน: ${dups.join(', ')} (สองคนกรอกเลขที่เดียวกัน) ตรวจก่อนพิมพ์`);
+    if (miss) alerts.push(`⚠ กรอกแล้วแต่ไม่พบไฟล์ใน Drive ${miss} คน (พิมพ์ไม่ได้)`);
+    if (chg) alerts.push(`⚠ ส่งใหม่หลังพิมพ์ ${chg} ฉบับ ต้องพิมพ์ซ้ำ`);
+    if (!alerts.length) alerts.push(doneP.length ? '✓ ไม่มีรายการที่ต้องตรวจ' : 'ยังไม่มีใครกรอก');
+  }
+  $('dashAlerts').replaceChildren(...alerts.map((t) => el$('li', { className: t.startsWith('✓') ? 'good' : '' }, t)));
+
+  // ปุ่มพิมพ์ของครู
+  [...dashSel].forEach((k) => { if (!docs.some((d) => docKey(d) === k)) dashSel.delete(k); });
+  const waitList = printable.filter((r) => r.st !== 'done').map((r) => r.doc);
+  const selList = printable.filter((r) => dashSel.has(docKey(r.doc))).map((r) => r.doc);
+  $('dtWait').textContent = docsLoading ? 'กำลังโหลดเอกสาร…' : `พิมพ์ที่ยังไม่พิมพ์ (${waitList.length} ฉบับ)`;
+  $('dtWait').disabled = docsLoading || !waitList.length;
+  $('dtSel').textContent = `พิมพ์ที่เลือก (${selList.length})`;
+  $('dtAll').textContent = `พิมพ์ทั้งหมด (${printable.length})`;
+  $('dtSel').disabled = !selList.length;
+  $('dtAll').disabled = docsLoading || !printable.length;
+  $('dtRange').disabled = docsLoading || !printable.length;
+  $('dtMark').disabled = $('dtUnmark').disabled = !selList.length;
+
+  // รายการ: ยังไม่กรอก (ซ้าย) และกรอกแล้ว (ขวา) ใช้ช่องค้นหาร่วมกัน
+  const q = squash(dashSearch.value);
+  const match = (name) => !q || name.includes(q);
+  $('dTodoN').textContent = `(${todoP.length})`;
+  $('dashTodo').replaceChildren(...todoP.filter((p) => match(p.name)).map((p, i) => {
+    const li = el$('li', { className: 'todo' });
+    li.append(el$('span', { className: 'idx' }, i + 1), el$('span', { className: 'nm' }, p.name), el$('span', { className: 'tag' }, 'ยังไม่กรอก'));
+    return li;
+  }));
+  if (!todoP.length) $('dashTodo').append(el$('li', { className: 'empty' }, 'ทุกคนกรอกครบแล้ว'));
+
+  const filter = known ? dashFilter : 'all';
+  const cnt = { wait: printable.filter((r) => r.st !== 'done').length, printed: printedN, check: rows.filter((r) => r.fl.length).length };
+  $('dashChips').hidden = !known;
+  $('dcWait').textContent = `(${cnt.wait})`; $('dcPrinted').textContent = `(${cnt.printed})`; $('dcCheck').textContent = `(${cnt.check})`;
+  const shown = rows.filter((r) => match(r.p.name) && (filter === 'all'
+    || (filter === 'wait' && r.doc && r.st !== 'done') || (filter === 'printed' && r.st === 'done') || (filter === 'check' && r.fl.length)));
+  dashVisible = shown.filter((r) => r.doc).map((r) => r.doc);
+  $('dDoneN').textContent = `(${doneP.length})`;
+
+  const selAll = $('dSelAll');
+  selAll.parentElement.hidden = !known;
+  selAll.checked = dashVisible.length > 0 && dashVisible.every((d) => dashSel.has(docKey(d)));
+
+  const TAGS = { missing: 'ไม่พบไฟล์', old: '⚠ แบบเก่า', dup: 'เลขที่ซ้ำ' };
+  $('dashDone').replaceChildren(...shown.map(({ p, doc, st, fl }) => {
+    const li = el$('li', { className: 'ok' });
+    if (known && doc) {
+      const chk = el$('input', { type: 'checkbox', className: 'chk', checked: dashSel.has(docKey(doc)), ariaLabel: `เลือก ${p.name}` });
+      chk.addEventListener('change', () => { if (chk.checked) dashSel.add(docKey(doc)); else dashSel.delete(docKey(doc)); renderDash(); });
+      li.append(chk);
+    } else if (known) li.append(el$('span', { className: 'chk' })); // ช่องว่างให้แนวคอลัมน์ตรงกัน
+    li.append(el$('span', { className: 'idx', title: 'เลขที่' }, +p.no), el$('span', { className: 'nm' }, p.name));
+    if (doc?.at) li.append(el$('span', { className: 'when' }, dashWhen(doc.at)));
+    fl.filter((f) => TAGS[f]).forEach((f) => li.append(el$('span', { className: 'old-tag' }, TAGS[f])));
+    if (!known) li.append(el$('span', { className: 'tag' }, '✓ กรอกแล้ว'));
+    else if (st) li.append(el$('span', { className: `tag ${st === 'done' ? '' : st === 'changed' ? 'warn' : 'wait'}` },
+      st === 'done' ? '✓ พิมพ์แล้ว' : st === 'changed' ? 'ส่งใหม่ ต้องพิมพ์ซ้ำ' : 'รอพิมพ์'));
+    if (known && doc) {
+      const b = el$('button', { type: 'button', className: 'prt' }, 'พิมพ์');
+      b.addEventListener('click', () => runPrint([doc], b));
+      li.append(b);
+    }
+    return li;
+  }));
+  if (!shown.length) $('dashDone').append(el$('li', { className: 'empty' }, q ? 'ไม่พบชื่อที่ค้นหา' : doneP.length ? 'ไม่มีรายการในตัวกรองนี้' : 'ยังไม่มีใครกรอก'));
+}
+
+// พิมพ์จากแดชบอร์ด: ถามเรื่องแบบเก่าก่อน แล้ววาดแดชบอร์ดใหม่หลังพิมพ์ (ปุ่มจะถูก printDocs เปิดคืนเอง)
+async function runPrint(list, btn) {
+  if (!list.length || !confirmOld(list)) return;
+  await printDocs([...list].sort(byNo), btn);
+  renderDash();
+}
+const printableDocs = () => docs.filter((d) => d.pdf && people?.some((p) => p.done && p.no === d.no && p.name === d.name)); // เฉพาะไฟล์ที่ตรงกับคนในบัญชี เหมือนตัวเลขบนแดชบอร์ด
+const docsWhere = (fn) => printableDocs().filter(fn);
+$('dtWait').addEventListener('click', (e) => runPrint(docsWhere((d) => printState(d) !== 'done'), e.currentTarget));
+$('dtSel').addEventListener('click', (e) => runPrint(docsWhere((d) => dashSel.has(docKey(d))), e.currentTarget));
+$('dtAll').addEventListener('click', (e) => runPrint(printableDocs(), e.currentTarget));
+$('dtRange').addEventListener('click', (e) => {
+  const from = Number($('dtFrom').value) || 0, to = Number($('dtTo').value) || 999;
+  const list = docsWhere((d) => +d.no >= from && +d.no <= to);
+  if (!list.length) { $('dashMsg').textContent = 'ไม่มีเอกสารในช่วงเลขที่นี้'; return; }
+  runPrint(list, e.currentTarget);
+});
+const markSelected = (on) => { setPrinted(docsWhere((d) => dashSel.has(docKey(d))), on); dashSel.clear(); renderDash(); };
+$('dtMark').addEventListener('click', () => markSelected(true));
+$('dtUnmark').addEventListener('click', () => markSelected(false));
+$('dtReload').addEventListener('click', loadDocs);
+$('dtOut').addEventListener('click', adminLogout);
+$('dashRefresh').addEventListener('click', () => { loadPeople(true); if (admin.pin) loadDocs(); });
+['dtFrom', 'dtTo'].forEach((id) => $(id).addEventListener('input', () => { $(id).value = digitsOnly($(id).value).slice(0, 3); }));
+dashSearch.addEventListener('input', renderDash);
+$('dSelAll').addEventListener('change', (e) => {
+  dashVisible.forEach((d) => { if (e.target.checked) dashSel.add(docKey(d)); else dashSel.delete(docKey(d)); });
+  renderDash();
+});
+document.querySelectorAll('#dashChips button').forEach((b) => b.addEventListener('click', () => {
+  dashFilter = b.dataset.df;
+  document.querySelectorAll('#dashChips button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderDash();
+}));
+$('dCopy').addEventListener('click', async () => {
+  const todo = (people || []).filter((p) => !p.done);
+  if (!todo.length) { $('dashMsg').textContent = 'ทุกคนกรอกครบแล้ว ไม่มีรายชื่อให้คัดลอก'; return; }
+  const text = `ยังไม่กรอกหนังสือรับรอง ${todo.length} คน:\n${todo.map((p, i) => `${i + 1}. ${p.name}`).join('\n')}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    $('dashMsg').textContent = `คัดลอกรายชื่อคนที่ยังไม่กรอก ${todo.length} คนแล้ว นำไปวางในไลน์กลุ่มได้`;
+  } catch (e) {
+    $('dashMsg').textContent = 'คัดลอกไม่ได้ ลองใช้ปุ่มเมาส์ขวาเลือกรายชื่อด้านล่างแล้วคัดลอกเอง';
+  }
+});
 
 const loginError = (err) => (/Failed to fetch|NetworkError|timeout|Abort/i.test(String(err)) ? 'เชื่อมต่อสคริปต์ไม่ได้ ลองใหม่อีกครั้ง' : String(err.message || err));
 

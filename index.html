@@ -24,6 +24,7 @@
   <div class="wrap">
     <button type="button" data-view="form" aria-pressed="true">ออกหนังสือ</button>
     <button type="button" data-view="status" aria-pressed="false">ใครกรอกแล้วบ้าง <span class="count" id="tabCount"></span></button>
+    <button type="button" data-view="dash" aria-pressed="false">แดชบอร์ด <span class="count" id="tabPrint"></span></button>
     <button type="button" data-view="admin" aria-pressed="false" class="teacher">สำหรับครู</button>
   </div>
 </nav>
@@ -150,6 +151,70 @@
     <p class="hint teacher-line" id="statusAdmin"></p>
     <p class="hint" id="statusHint"></p>
     <ol class="status-list" id="statusList"></ol>
+  </section>
+</main>
+
+<main class="wrap" id="viewDash" hidden>
+  <section class="panel dash" aria-labelledby="dashTitle">
+    <div class="dash-head">
+      <h2 id="dashTitle">แดชบอร์ดพิมพ์หนังสือรับรอง</h2>
+      <span class="hint" id="dashAt"></span>
+      <button type="button" id="dashRefresh" class="ghost">รีเฟรช</button>
+    </div>
+
+    <div class="kpis" id="dashKpis"></div>
+    <div class="stack" id="dashBar" role="img" aria-label="สัดส่วนสถานะ"></div>
+    <ul class="legend" id="dashLegend"></ul>
+    <ul class="alerts" id="dashAlerts"></ul>
+
+    <div class="dash-admin">
+      <div class="teacher-line" id="dashLogin"></div>
+      <div id="dashTools" hidden>
+        <div class="docs-tools">
+          <button type="button" id="dtWait" class="primary"></button>
+          <button type="button" id="dtSel"></button>
+          <button type="button" id="dtAll"></button>
+        </div>
+        <div class="docs-tools">
+          <label for="dtFrom">เลขที่</label>
+          <input id="dtFrom" type="text" inputmode="numeric" maxlength="3" placeholder="จาก" aria-label="เลขที่เริ่มต้น">
+          <span>ถึง</span>
+          <input id="dtTo" type="text" inputmode="numeric" maxlength="3" placeholder="ถึง" aria-label="เลขที่สุดท้าย">
+          <button type="button" id="dtRange">พิมพ์ช่วงนี้</button>
+        </div>
+        <div class="docs-tools">
+          <button type="button" id="dtMark" class="ghost">ติ๊กว่าพิมพ์แล้ว (ที่เลือก)</button>
+          <button type="button" id="dtUnmark" class="ghost">ยกเลิกที่ติ๊ก (ที่เลือก)</button>
+          <button type="button" id="dtReload" class="ghost">รีเฟรชเอกสาร</button>
+          <button type="button" id="dtOut" class="ghost">ออกจากโหมดครู</button>
+        </div>
+        <p class="hint">สถานะ "พิมพ์แล้ว" เก็บในเบราว์เซอร์เครื่องนี้ (เบราว์เซอร์บอกไม่ได้ว่ากระดาษออกจริงหรือไม่ ถ้ากดยกเลิกการพิมพ์ ให้ยกเลิกที่ติ๊ก) ถ้านักเรียนส่งใหม่หลังพิมพ์ จะขึ้น "ส่งใหม่ ต้องพิมพ์ซ้ำ"</p>
+      </div>
+      <p class="status" id="dashMsg" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="status-tools">
+      <div class="seg" id="dashChips" role="group" aria-label="กรองรายการที่กรอกแล้ว" hidden>
+        <button type="button" data-df="all" aria-pressed="true">ทั้งหมด</button>
+        <button type="button" data-df="wait" aria-pressed="false">รอพิมพ์ <span class="count" id="dcWait"></span></button>
+        <button type="button" data-df="printed" aria-pressed="false">พิมพ์แล้ว <span class="count" id="dcPrinted"></span></button>
+        <button type="button" data-df="check" aria-pressed="false">ต้องตรวจ <span class="count" id="dcCheck"></span></button>
+      </div>
+      <input id="dashSearch" type="search" placeholder="ค้นหาชื่อ" autocomplete="off" aria-label="ค้นหาชื่อ">
+    </div>
+
+    <div class="dash-cols">
+      <div>
+        <h3 class="col-h todo-h">ยังไม่กรอก <span id="dTodoN"></span>
+          <button type="button" id="dCopy" class="ghost">คัดลอกรายชื่อ</button></h3>
+        <ol class="status-list" id="dashTodo"></ol>
+      </div>
+      <div>
+        <h3 class="col-h ok-h">กรอกแล้ว <span id="dDoneN"></span>
+          <label class="all" hidden><input type="checkbox" id="dSelAll"> เลือกทั้งหมด</label></h3>
+        <ol class="status-list" id="dashDone"></ol>
+      </div>
+    </div>
   </section>
 </main>
 
