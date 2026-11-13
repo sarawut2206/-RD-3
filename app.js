@@ -1048,7 +1048,7 @@ function renderDocs() {
     ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}${olds ? ` · ⚠ แบบเก่า ${olds} ฉบับ (ส่งก่อนปรับฟอร์ม ขึ้นบรรทัดไม่ตรงฟอร์ม)` : ''}`
     : 'ยังไม่มีเอกสารที่ส่งเข้ามา';
   $('btnDocsMerge').disabled = !docs.some((d) => d.pdf);
-  $('btnDocsZip').disabled = !docs.some((d) => d.docx);
+  $('btnDocsZip').disabled = $('btnDocsWord').disabled = !docs.some((d) => d.docx);
   $('btnDocsOld').hidden = !olds;
   $('btnDocsOld').textContent = `ลบแบบเก่าทั้งหมด (${olds}) ให้กรอกใหม่`;
   renderStatus(); // ปุ่มพิมพ์ในหน้าสรุปใช้รายการเดียวกัน
@@ -1147,6 +1147,72 @@ async function zipWord(btn, say, from, to) {
     btn.disabled = false;
   }
 }
+// ใส่ตัวคั่นหน้า (section break) ที่ท้ายย่อหน้าสุดท้ายของเนื้อหา ไม่เพิ่มย่อหน้าว่าง จะได้ไม่ดันเป็นหน้าเปล่าเมื่อหนังสือเต็มหน้า
+function endSectionAfterLastParagraph(body, sect) {
+  const at = Math.max(body.lastIndexOf('<w:p '), body.lastIndexOf('<w:p>'));
+  if (at < 0) throw new Error('ไฟล์ Word ไม่ถูกต้อง');
+  const open = body.indexOf('>', at) + 1;
+  if (body.startsWith('<w:pPr>', open)) {
+    const close = body.indexOf('</w:pPr>', open);
+    return body.slice(0, close) + sect + body.slice(close);
+  }
+  return `${body.slice(0, open)}<w:pPr>${sect}</w:pPr>${body.slice(open)}`;
+}
+
+// รวมเนื้อหาของไฟล์ Word หลายไฟล์ (ทำจากแบบเดียวกัน) เป็นเอกสารเดียว คนละหน้า ใช้โครงไฟล์ของคนแรก (รูปครุฑ ฟอนต์ ตั้งค่าหน้า)
+function mergeWordXml(xmls) {
+  const parts = xmls.map((xml) => {
+    const m = /<w:body>([\s\S]*)<\/w:body>/.exec(xml);
+    if (!m) throw new Error('ไฟล์ Word ไม่ถูกต้อง');
+    const sect = /<w:sectPr[\s\S]*?<\/w:sectPr>\s*$/.exec(m[1]);
+    return { body: sect ? m[1].slice(0, sect.index) : m[1], sect: sect ? sect[0].trim() : '' };
+  });
+  const rid = /r:embed="([^"]+)"/.exec(xmls[0])?.[1]; // รูปครุฑใช้รหัสความสัมพันธ์ของไฟล์แรกเหมือนกันทุกหน้า
+  const last = parts.length - 1;
+  const body = parts.map((p, i) => {
+    const b = rid ? p.body.replace(/r:embed="[^"]+"/g, `r:embed="${rid}"`) : p.body;
+    return i < last ? endSectionAfterLastParagraph(b, p.sect) : b + p.sect;
+  }).join('');
+  let n = 0;
+  return (xmls[0].slice(0, xmls[0].indexOf('<w:body>') + 8) + body + '</w:body></w:document>')
+    .replace(/(<wp:docPr id=")\d+/g, (_, a) => a + (++n)); // รหัสรูปต้องไม่ซ้ำกัน
+}
+
+// รวมไฟล์ Word ของทุกคน (หรือช่วงเลขที่) เป็นไฟล์ .docx ไฟล์เดียว เรียงตามเลขที่ หนึ่งคนหนึ่งหน้า เปิดแล้วสั่งพิมพ์ครั้งเดียวได้เลย
+async function mergeWord(btn, say, from, to) {
+  const list = docs.filter((d) => d.docx && +d.no >= from && +d.no <= to);
+  if (!list.length) { say('ไม่มีไฟล์ Word ในช่วงเลขที่นี้', true); return; }
+  if (!confirmOld(list)) return;
+  btn.disabled = true;
+  try {
+    let base = null;
+    const xmls = [];
+    for (let i = 0; i < list.length; i += 6) {
+      const chunk = list.slice(i, i + 6);
+      say(`กำลังรวมไฟล์ Word เป็นไฟล์เดียว… ${Math.min(i + 6, list.length)}/${list.length}`);
+      const files = await fetchDriveFiles(chunk.map((d) => d.docx));
+      for (const d of chunk) {
+        const zip = await JSZip.loadAsync(files.get(d.docx).bytes);
+        base = base || zip;
+        xmls.push(await zip.file('word/document.xml').async('string'));
+      }
+    }
+    base.file('word/document.xml', mergeWordXml(xmls));
+    const label = from || to !== 999 ? ` เลขที่ ${+list[0].no}-${+list[list.length - 1].no}` : '';
+    saveFile(await base.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }), `หนังสือรับรอง นศท. รวมเล่ม${label}.docx`,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    say(`รวมแล้ว ${list.length} ฉบับ เรียงตามเลขที่ ${+list[0].no} ถึง ${+list[list.length - 1].no} หนึ่งคนหนึ่งหน้า เปิดไฟล์ใน Word แล้วสั่งพิมพ์ครั้งเดียวได้เลย (ตรวจจำนวนหน้าให้เท่ากับ ${list.length} ก่อนพิมพ์)`);
+  } catch (e) {
+    console.error(e);
+    if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
+    say(`รวมไฟล์ Word ไม่สำเร็จ: ${String(e.message || e)}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('btnDocsWord').addEventListener('click', (e) => mergeWord(e.currentTarget, sayDocs, Number($('docFrom').value) || 0, Number($('docTo').value) || 999));
+$('dtWord').addEventListener('click', (e) => mergeWord(e.currentTarget, (t) => { $('dashMsg').textContent = t; }, Number($('dtFrom').value) || 0, Number($('dtTo').value) || 999));
+
 $('btnDocsZip').addEventListener('click', (e) => zipWord(e.currentTarget, sayDocs, Number($('docFrom').value) || 0, Number($('docTo').value) || 999));
 $('dtZip').addEventListener('click', (e) => zipWord(e.currentTarget, (t) => { $('dashMsg').textContent = t; }, Number($('dtFrom').value) || 0, Number($('dtTo').value) || 999));
 
@@ -1282,7 +1348,7 @@ function renderDash() {
   $('dtAll').textContent = `พิมพ์ทั้งหมด (${printable.length})`;
   $('dtSel').disabled = !selList.length;
   $('dtAll').disabled = docsLoading || !printable.length;
-  $('dtZip').disabled = docsLoading || !docs.some((d) => d.docx);
+  $('dtZip').disabled = $('dtWord').disabled = docsLoading || !docs.some((d) => d.docx);
   $('dtRange').disabled = docsLoading || !printable.length;
   $('dtMark').disabled = $('dtUnmark').disabled = !selList.length;
 
