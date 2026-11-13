@@ -191,6 +191,13 @@
           <button type="button" id="dtReload" class="ghost">รีเฟรชเอกสาร</button>
           <button type="button" id="dtOut" class="ghost">ออกจากโหมดครู</button>
         </div>
+        <div class="admin-card" id="dashFix">
+          <h3>แก้ลำดับให้ตรงทะเบียน</h3>
+          <p class="hint">เลือกไฟล์ทะเบียนที่มีคอลัมน์ "ลำดับ" (เช่น รายชื่อ_ตรวจสอบ_ปี3_ชาย.xlsx) เว็บจะเทียบเลขที่ของเอกสารที่ส่งแล้ว แล้วสร้าง PDF และ Word ใหม่ด้วยลำดับที่ถูก (วัน เดือน ปีเกิดคงเดิมตามที่นักเรียนกรอก) แทนไฟล์เดิมใน Drive ไฟล์เดิมย้ายไปถังขยะ กู้คืนได้ 30 วัน</p>
+          <input id="fixFile" type="file" accept=".xlsx,.csv,.txt" aria-label="ไฟล์ทะเบียน">
+          <ul class="alerts" id="fixList"></ul>
+          <div class="docs-tools"><button type="button" id="fixGo" class="primary" disabled>แก้ลำดับ</button></div>
+        </div>
         <p class="hint">สถานะ "พิมพ์แล้ว" เก็บในเบราว์เซอร์เครื่องนี้ (เบราว์เซอร์บอกไม่ได้ว่ากระดาษออกจริงหรือไม่ ถ้ากดยกเลิกการพิมพ์ ให้ยกเลิกที่ติ๊ก) ถ้านักเรียนส่งใหม่หลังพิมพ์ จะขึ้น "ส่งใหม่ ต้องพิมพ์ซ้ำ"</p>
       </div>
       <p class="status" id="dashMsg" role="status" aria-live="polite"></p>

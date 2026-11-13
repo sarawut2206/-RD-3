@@ -1338,6 +1338,8 @@ function renderDash() {
   }
   $('dashAlerts').replaceChildren(...alerts.map((t) => el$('li', { className: t.startsWith('✓') ? 'good' : '' }, t)));
 
+  renderFix();
+
   // ปุ่มพิมพ์ของครู
   [...dashSel].forEach((k) => { if (!docs.some((d) => docKey(d) === k)) dashSel.delete(k); });
   const waitList = printable.filter((r) => r.st !== 'done').map((r) => r.doc);
@@ -1447,6 +1449,92 @@ async function auditDocs(btn) {
   }
 }
 $('dtAudit').addEventListener('click', (e) => auditDocs(e.currentTarget));
+
+// แก้ลำดับของเอกสารที่ส่งแล้วให้ตรงทะเบียน: วาดหนังสือใหม่ในเบราว์เซอร์ครูด้วยข้อมูลเดิม (วันเกิดอ่านจากไฟล์ Word เดิม) แต่ใช้ลำดับที่ถูก
+// แล้วลบโฟลเดอร์เดิม (ย้ายไปถังขยะ) และส่งไฟล์ใหม่เข้าโฟลเดอร์ที่มีเลขที่ถูก ใช้ได้กับสคริปต์รุ่นปัจจุบัน ไม่ต้องแก้สคริปต์
+const stripTitle = (s) => squash(String(s)).replace(/^(นศท\.?|นาย|นางสาว|นาง)\s*/, '');
+let fixRef = new Map(); // ชื่อ -> { no, byear } จากไฟล์ทะเบียนที่ครูเลือก
+let fixPlan = [];       // [{ p, doc, want, byear }]
+let fixBusy = false;
+
+function renderFix() {
+  const items = [];
+  if (people && admin.pin && !docsLoading) {
+    people.filter((p) => p.done).forEach((p) => {
+      const doc = docOf(p), ref = fixRef.get(p.name);
+      const want = ref?.no || p.want || 0;
+      if (doc?.docx && want && +p.no !== want) items.push({ p, doc, want, byear: ref?.byear || 0 });
+    });
+  }
+  fixPlan = items.sort((a, b) => a.want - b.want);
+  $('fixList').replaceChildren(...(fixPlan.length
+    ? fixPlan.map((x) => el$('li', {}, `${x.p.name}: เลขที่ ${+x.p.no} → ${x.want}`))
+    : [el$('li', { className: 'good' }, fixRef.size || people?.some((p) => p.want) ? '✓ เลขที่ของเอกสารที่ส่งแล้วตรงทะเบียนทุกคน' : 'ยังไม่ได้เลือกไฟล์ทะเบียน')]));
+  $('fixGo').textContent = fixPlan.length ? `แก้ลำดับ ${fixPlan.length} คน` : 'แก้ลำดับ';
+  $('fixGo').disabled = fixBusy || !fixPlan.length;
+}
+
+$('fixFile').addEventListener('change', async () => {
+  const file = $('fixFile').files[0];
+  fixRef = new Map();
+  try {
+    if (file) {
+      const sheets = /\.xlsx$/i.test(file.name) ? await readXlsx(await file.arrayBuffer()) : parseDelimited(await decodeText(file));
+      analyzeRoster(sheets).items.forEach((it) => { if (it.no) fixRef.set(stripTitle(it.name), { no: +it.no, byear: +it.byear || 0 }); });
+      if (!fixRef.size) $('dashMsg').textContent = 'ไฟล์นี้ไม่มีคอลัมน์ "ลำดับ" หรืออ่านไม่ได้';
+    }
+  } catch (e) {
+    console.error(e);
+    $('dashMsg').textContent = 'อ่านไฟล์ทะเบียนไม่สำเร็จ';
+  }
+  renderDash();
+});
+
+async function fixNumbers(btn) {
+  const plan = fixPlan.slice();
+  if (!plan.length || fixBusy) return;
+  if (!confirm(`แก้ลำดับของ ${plan.length} คน ใช่หรือไม่?\n\n${plan.map((x) => `${x.p.name}: ${+x.p.no} → ${x.want}`).join('\n')}\n\nไฟล์เดิมของแต่ละคนจะย้ายไปถังขยะใน Drive (กู้คืนได้ 30 วัน) แล้วสร้างไฟล์ใหม่แทน`)) return;
+  fixBusy = true;
+  btn.disabled = true;
+  showView('form'); // ต้องแสดงหน้าหนังสือไว้ เพื่อให้วัดบรรทัดและสร้างภาพได้
+  const say = (t, bad) => { $('dashMsg').textContent = t; setStatus(t, bad); };
+  const ok = [], failed = [];
+  for (const [i, { p, doc, want, byear }] of plan.entries()) {
+    say(`กำลังแก้ ${i + 1}/${plan.length}: ${p.name}…`);
+    let deleted = false;
+    try {
+      const pick = await callScript({ action: 'pick', key: p.k });
+      if (!pick.found) throw new Error('ไม่พบชื่อในทะเบียน');
+      const text = await wordText((await fetchDriveFiles([doc.docx])).get(doc.docx).bytes);
+      const m = /เกิดวันที่\s*([๐-๙]+)\s*เดือน\s*([ก-๙]+)\s*พ\.ศ\.\s*([๐-๙]{4})/.exec(text);
+      const day = m ? +toArabic(m[1]) : 0, month = m ? MONTHS.indexOf(m[2]) + 1 : 0, year = m ? +toArabic(m[3]) : 0;
+      if (!day || !month || !year) throw new Error('อ่านวันเกิดจากไฟล์เดิมไม่ได้');
+      if (byear && byear !== year) throw new Error(`ปีเกิดในเอกสาร ${year} ไม่ตรงทะเบียน ${byear} ให้นักเรียนกรอกใหม่`);
+      el.first.value = p.first; el.last.value = p.last; el.no.value = String(want);
+      el.id.value = groupId(digitsOnly(pick.id).slice(0, 13)); el.sid.value = digitsOnly(pick.sid);
+      el.day.value = day; el.month.value = month; el.year.value = year;
+      if (el.year.value !== String(year)) throw new Error(`ปีเกิด ${year} อยู่นอกช่วงที่ฟอร์มเลือกได้`);
+      render();
+      const v = read();
+      const body = { no: v.no, id: v.id, byear: v.year, pdf: toBase64(await buildPdf(v)), docx: toBase64(await makeDocx(v)) };
+      await adminCall('adminDelete', { key: p.k });
+      deleted = true;
+      try { await callScript(body); } catch (e) { await callScript(body); } // ลบเก่าไปแล้ว ลองส่งใหม่อีกครั้งก่อนยอมแพ้
+      ok.push(p.name);
+    } catch (e) {
+      console.error(e);
+      failed.push(`${p.name} (${deleted ? 'ลบไฟล์เก่าแล้วแต่ส่งไฟล์ใหม่ไม่สำเร็จ ให้นักเรียนกรอกใหม่ หรือกู้จากถังขยะ: ' : ''}${String(e.message || e)})`);
+      if (/รหัสครู|ล็อก/.test(String(e.message))) { adminLogout(); break; }
+    }
+  }
+  $('btnReset').click(); // ล้างฟอร์มที่ใช้วาด และโหลดรายชื่อใหม่
+  fixBusy = false;
+  showView('dash');
+  if (admin.pin) await loadDocs();
+  say(`แก้ลำดับแล้ว ${ok.length} คน${failed.length ? ` · ไม่สำเร็จ ${failed.length} คน: ${failed.join('; ')}` : ' ครบทุกคน'}`, failed.length > 0);
+  renderDash();
+}
+$('fixGo').addEventListener('click', (e) => fixNumbers(e.currentTarget));
 
 // พิมพ์จากแดชบอร์ด: ถามเรื่องแบบเก่าก่อน แล้ววาดแดชบอร์ดใหม่หลังพิมพ์ (ปุ่มจะถูก printDocs เปิดคืนเอง)
 async function runPrint(list, btn) {
