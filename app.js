@@ -1048,6 +1048,7 @@ function renderDocs() {
     ? `ส่งแล้ว ${docs.length} ฉบับ${dup.length ? ` · เลขที่ซ้ำกัน ${dup.map((k) => +k).join(', ')} (สองคนกรอกเลขที่เดียวกัน ตรวจสอบก่อนพิมพ์)` : ''}${olds ? ` · ⚠ แบบเก่า ${olds} ฉบับ (ส่งก่อนปรับฟอร์ม ขึ้นบรรทัดไม่ตรงฟอร์ม)` : ''}`
     : 'ยังไม่มีเอกสารที่ส่งเข้ามา';
   $('btnDocsMerge').disabled = !docs.some((d) => d.pdf);
+  $('btnDocsZip').disabled = !docs.some((d) => d.docx);
   $('btnDocsOld').hidden = !olds;
   $('btnDocsOld').textContent = `ลบแบบเก่าทั้งหมด (${olds}) ให้กรอกใหม่`;
   renderStatus(); // ปุ่มพิมพ์ในหน้าสรุปใช้รายการเดียวกัน
@@ -1121,6 +1122,33 @@ async function mergeDocs() {
     btn.disabled = false;
   }
 }
+
+// รวมไฟล์ Word ของทุกคน (หรือช่วงเลขที่) เป็น ZIP เดียว ข้างในเป็นโฟลเดอร์เดียว ไฟล์ชื่อ "เลขที่ ชื่อ นามสกุล.docx" ใช้ไฟล์ล่าสุดของแต่ละคน
+async function zipWord(btn, say, from, to) {
+  const list = docs.filter((d) => d.docx && +d.no >= from && +d.no <= to);
+  if (!list.length) { say('ไม่มีไฟล์ Word ในช่วงเลขที่นี้', true); return; }
+  btn.disabled = true;
+  try {
+    const zip = new JSZip(), dir = zip.folder('หนังสือรับรอง Word');
+    for (let i = 0; i < list.length; i += 6) {
+      const chunk = list.slice(i, i + 6);
+      say(`กำลังรวมไฟล์ Word… ${Math.min(i + 6, list.length)}/${list.length}`);
+      const files = await fetchDriveFiles(chunk.map((d) => d.docx));
+      chunk.forEach((d) => dir.file(`${d.no} ${d.name}`.replace(/[\\/:*?"<>|]/g, '') + '.docx', files.get(d.docx).bytes));
+    }
+    const label = from || to !== 999 ? ` เลขที่ ${+list[0].no}-${+list[list.length - 1].no}` : '';
+    saveFile(await zip.generateAsync({ type: 'uint8array', compression: 'STORE' }), `หนังสือรับรอง นศท. Word รวม${label}.zip`, 'application/zip'); // docx บีบอัดอยู่แล้ว ไม่ต้องบีบซ้ำ
+    say(`รวมไฟล์ Word แล้ว ${list.length} ฉบับ ในโฟลเดอร์ "หนังสือรับรอง Word" ข้างใน ZIP แตกไฟล์แล้วใช้ได้เลย`);
+  } catch (e) {
+    console.error(e);
+    if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
+    say(`รวมไฟล์ Word ไม่สำเร็จ: ${String(e.message || e)}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('btnDocsZip').addEventListener('click', (e) => zipWord(e.currentTarget, sayDocs, Number($('docFrom').value) || 0, Number($('docTo').value) || 999));
+$('dtZip').addEventListener('click', (e) => zipWord(e.currentTarget, (t) => { $('dashMsg').textContent = t; }, Number($('dtFrom').value) || 0, Number($('dtTo').value) || 999));
 
 $('btnDocsMerge').addEventListener('click', mergeDocs);
 $('btnDocsOld').addEventListener('click', () => deleteOldDocs($('btnDocsOld')));
@@ -1254,6 +1282,7 @@ function renderDash() {
   $('dtAll').textContent = `พิมพ์ทั้งหมด (${printable.length})`;
   $('dtSel').disabled = !selList.length;
   $('dtAll').disabled = docsLoading || !printable.length;
+  $('dtZip').disabled = docsLoading || !docs.some((d) => d.docx);
   $('dtRange').disabled = docsLoading || !printable.length;
   $('dtMark').disabled = $('dtUnmark').disabled = !selList.length;
 
