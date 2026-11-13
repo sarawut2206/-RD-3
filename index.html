@@ -185,6 +185,7 @@
         <div class="docs-tools">
           <button type="button" id="dtMark" class="ghost">ติ๊กว่าพิมพ์แล้ว (ที่เลือก)</button>
           <button type="button" id="dtUnmark" class="ghost">ยกเลิกที่ติ๊ก (ที่เลือก)</button>
+          <button type="button" id="dtAudit">ตรวจปีเกิด/ลำดับในไฟล์ที่ส่งแล้ว</button>
           <button type="button" id="dtReload" class="ghost">รีเฟรชเอกสาร</button>
           <button type="button" id="dtOut" class="ghost">ออกจากโหมดครู</button>
         </div>
@@ -264,6 +265,7 @@
       <div class="admin-card">
         <h3>นำเข้ารายชื่อ</h3>
         <p class="hint">ไฟล์ต้องมีแถวหัวตารางที่มีคำว่า "นศท", "ประชาชน" และ "ชื่อ" (ลำดับคอลัมน์อะไรก็ได้) ใช้ไฟล์ .xlsx หรือ .csv หรือคัดลอกจาก Excel มาวาง ถ้าชื่อชุดซ้ำกับที่มีอยู่ จะถูกแทนที่ทั้งชุด</p>
+        <p class="hint">ถ้ามีคอลัมน์ "ลำดับ" และ "ปีเกิด" (พ.ศ.) เพิ่ม เว็บจะตรวจลำดับและปีเกิดที่นักเรียนกรอกกับทะเบียนทันที และบอกว่าผิดตรงไหน</p>
         <div class="field">
           <label for="impLabel">ชื่อชุดรายชื่อ</label>
           <input id="impLabel" type="text" maxlength="30" placeholder="เช่น ปี 3 ชาย" autocomplete="off">

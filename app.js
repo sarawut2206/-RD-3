@@ -119,13 +119,17 @@ function validate(v) {
     if (v.sid.length !== C.sidLength) err.sid = `เลขประจำตัว นศท. ต้องมี ${C.sidLength} หลัก (ตอนนี้ ${v.sid.length} หลัก)`;
   }
 
+  // ลำดับและปีเกิดตามทะเบียน (ครูนำเข้าไว้) ใช้ตรวจเมื่อมีข้อมูลของคนที่เลือก วัน/เดือนเกิดไม่มีในทะเบียนจึงตรวจได้แค่ว่าเป็นวันที่ที่มีจริง
+  const ref = picked && lookup.state === 'found' && lookup.key === picked.k ? lookup : null;
   if (!v.no) err.no = 'กรุณากรอกลำดับในบัญชีรายชื่อ';
   else if (+v.no < 1) err.no = 'ลำดับต้องเริ่มจาก 1';
+  else if (ref?.refNo && +v.no !== ref.refNo) err.no = `ลำดับไม่ตรงกับบัญชีรายชื่อ ลำดับของคุณคือ ${ref.refNo} กรุณาแก้ให้ตรง`;
 
   if (!v.day || !v.month || !v.year) err.birth = 'กรุณาเลือกวัน เดือน และปีเกิดให้ครบ';
   else {
     const dim = new Date(+v.year - 543, +v.month, 0).getDate();
     if (+v.day > dim) err.birth = `เดือน${MONTHS[v.month - 1]} ปี ${v.year} ไม่มีวันที่ ${v.day}`;
+    else if (ref?.refYear && +v.year !== ref.refYear) err.birth = `ปีเกิดไม่ตรงกับทะเบียนนักเรียน กรุณาตรวจปีเกิดอีกครั้ง (ถ้ามั่นใจว่าถูก แจ้งครูผู้กำกับ)`;
   }
   return { err, warn };
 }
@@ -464,7 +468,7 @@ async function loadPeople(silent) {
   try {
     const r = await callScript({ action: 'list' });
     people = r.list
-      .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`), done: !!p.done, no: p.no || '' }))
+      .map((p) => ({ k: p.k, first: p.first, last: p.last, name: squash(`${p.first} ${p.last}`), done: !!p.done, no: p.no || '', bad: !!p.bad, want: p.want || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
     peopleAt = new Date();
     if (manual) { // โหลดได้แล้ว กลับมาใช้โหมดกดเลือกชื่อ และล้างสิ่งที่พิมพ์เองไว้
@@ -573,7 +577,9 @@ async function fetchPick(key) {
     console.error(e);
   }
   if (lookup.key !== key) return; // นักเรียนกดเลือกคนอื่นไปแล้วระหว่างรอคำตอบ
-  lookup = { key, state };
+  lookup = { key, state, refNo: Number(r?.refNo) || 0, refYear: Number(r?.refYear) || 0 };
+  if (el.no.value) touched.add('no'); // กรอกไว้ก่อนเลือกชื่อ: ให้ผลตรวจขึ้นทันที (ช่องที่ยังว่างไม่ขึ้นสีแดง)
+  if (el.year.value) touched.add('birth');
   applyMode(); // คืน placeholder ปกติ
   if (state === 'found') {
     el.id.value = groupId(digitsOnly(r.id).slice(0, 13));
@@ -761,6 +767,7 @@ function renderStatus() {
       const del = el$('button', { type: 'button', className: 'del' }, 'ลบ ให้กรอกใหม่');
       del.addEventListener('click', () => deleteSubmission(p));
       if (doc && isOld(doc)) li.append(el$('span', { className: 'old-tag', title: 'ส่งก่อนปรับฟอร์ม ขึ้นบรรทัดไม่ตรงฟอร์ม' }, '⚠ แบบเก่า'));
+      if (p.bad) li.append(el$('span', { className: 'old-tag', title: 'ลำดับที่กรอกไม่ตรงทะเบียน' }, `⚠ ลำดับผิด (ควรเป็น ${p.want})`));
       li.append(print, del);
     }
     return li;
@@ -805,11 +812,12 @@ function adminLogout() {
   renderStatus();
 }
 const maskId = (id) => `${id[0]} xxxx xxxxx xx ${id[12]}`;
-const HEADER_RE = { id: /ประชาชน/, sid: /นศท/, name: /ชื่อ/ };
+const HEADER_RE = { id: /ประชาชน/, sid: /นศท/, name: /ชื่อ/, no: /ลำดับ/, byear: /เกิด/ };
 
+// id / sid / name บังคับ ส่วน no / byear (ลำดับ, ปีเกิด พ.ศ.) ไม่บังคับ ถ้ามีหน้าเว็บจะตรวจที่นักเรียนกรอก
 function headerCols(row) {
   const find = (re) => row.findIndex((c) => re.test(String(c ?? '')));
-  const cols = { id: find(HEADER_RE.id), sid: find(HEADER_RE.sid), name: find(HEADER_RE.name) };
+  const cols = { id: find(HEADER_RE.id), sid: find(HEADER_RE.sid), name: find(HEADER_RE.name), no: find(HEADER_RE.no), byear: find(HEADER_RE.byear) };
   return cols.id >= 0 && cols.sid >= 0 && cols.name >= 0 ? cols : null;
 }
 
@@ -877,25 +885,31 @@ function analyzeRoster(sheets) {
     const h = rows.slice(0, 20).findIndex((r) => headerCols(r));
     if (h < 0) continue;
     const cols = headerCols(rows[h]);
-    const items = [], bad = { id: [], sid: [], name: [], dup: [] }, checksum = [], seen = new Map();
+    const items = [], bad = { id: [], sid: [], name: [], dup: [], no: [], dupNo: [], byear: [] }, checksum = [], seen = new Map(), seenNo = new Map();
     rows.slice(h + 1).forEach((r, i) => {
       const line = h + 2 + i;
       const id = digitsOnly(String(r[cols.id] ?? '')), sid = digitsOnly(String(r[cols.sid] ?? ''));
       if (!id && !sid) return; // แถวสรุป/แถวว่าง ไม่ใช่รายชื่อ
       const name = nameOk(r[cols.name]);
+      // ลำดับ/ปีเกิด: ว่างได้ (คนนั้นจะไม่ถูกตรวจ) แต่ถ้ามีต้องเป็นค่าที่ใช้ได้
+      const no = cols.no >= 0 ? digitsOnly(String(r[cols.no] ?? '')) : '';
+      const byear = cols.byear >= 0 ? digitsOnly(String(r[cols.byear] ?? '')) : '';
       let ok = true;
       if (id.length !== 13) { bad.id.push(line); ok = false; }
       if (!sid || sid.length > 12) { bad.sid.push(line); ok = false; }
       if (!name) { bad.name.push(line); ok = false; }
+      if (no && (+no < 1 || +no > 999)) { bad.no.push(line); ok = false; }
+      if (no && +no >= 1 && +no <= 999) { if (seenNo.has(+no)) { bad.dupNo.push(line); ok = false; } else seenNo.set(+no, line); }
+      if (byear && (+byear < 2400 || +byear > 2600)) { bad.byear.push(line); ok = false; }
       if (id.length === 13) {
         if (seen.has(id)) { bad.dup.push(line); ok = false; } else seen.set(id, line);
         if (!idChecksumOk(id)) checksum.push(line);
       }
-      if (ok) items.push({ sid, id, name });
+      if (ok) items.push({ sid, id, name, no, byear });
     });
     return { found: true, items, bad, checksum, blocked: Object.values(bad).some((a) => a.length) };
   }
-  return { found: false, items: [], bad: { id: [], sid: [], name: [], dup: [] }, checksum: [], blocked: true };
+  return { found: false, items: [], bad: { id: [], sid: [], name: [], dup: [], no: [], dupNo: [], byear: [] }, checksum: [], blocked: true };
 }
 
 const lines = (a) => `แถวที่ ${a.slice(0, 8).join(', ')}${a.length > 8 ? ` และอีก ${a.length - 8} แถว` : ''}`;
@@ -914,15 +928,22 @@ function renderImportPreview(res) {
     if (res.bad.sid.length) add('bad', `เลข นศท. ว่างหรือผิดรูปแบบ: ${lines(res.bad.sid)}`);
     if (res.bad.name.length) add('bad', `ชื่อ-สกุลว่างหรือผิดรูปแบบ (ต้องมีชื่อและนามสกุล): ${lines(res.bad.name)}`);
     if (res.bad.dup.length) add('bad', `เลขประจำตัวประชาชนซ้ำ: ${lines(res.bad.dup)}`);
+    if (res.bad.no.length) add('bad', `ลำดับต้องเป็นเลข 1-999: ${lines(res.bad.no)}`);
+    if (res.bad.dupNo.length) add('bad', `ลำดับซ้ำกัน: ${lines(res.bad.dupNo)}`);
+    if (res.bad.byear.length) add('bad', `ปีเกิดต้องเป็น พ.ศ. 4 หลัก (2400-2600): ${lines(res.bad.byear)}`);
+    const nRef = res.items.filter((it) => it.no || it.byear).length;
+    if (res.items.length) add(nRef ? 'ok' : 'warn', nRef
+      ? `มีลำดับ/ปีเกิดตามทะเบียน ${nRef} คน หน้าเว็บจะตรวจที่นักเรียนกรอกกับข้อมูลนี้ (วัน/เดือนเกิดไม่อยู่ในทะเบียน ตรวจไม่ได้)`
+      : 'ไฟล์นี้ไม่มีคอลัมน์ "ลำดับ" และ "เกิด" จึงจะไม่ตรวจลำดับและปีเกิดที่นักเรียนกรอก');
     if (res.checksum.length) add('warn', `เลขบัตรไม่ผ่านการตรวจหลักสุดท้าย (นำเข้าได้ แต่ควรเช็กกับต้นฉบับ): ${lines(res.checksum)}`);
     if (res.blocked) add('bad', 'ยังนำเข้าไม่ได้ กรุณาแก้ไฟล์ต้นทางแล้วเลือกไฟล์ใหม่');
     if (res.items.length) {
       const t = document.createElement('table');
-      t.innerHTML = '<thead><tr><th>เลข นศท.</th><th>เลขบัตร (ปิดบังบางส่วน)</th><th>ชื่อ-สกุล</th></tr></thead>';
+      t.innerHTML = '<thead><tr><th>เลข นศท.</th><th>เลขบัตร (ปิดบังบางส่วน)</th><th>ชื่อ-สกุล</th><th>ลำดับ</th><th>ปีเกิด</th></tr></thead>';
       const tb = document.createElement('tbody');
       res.items.slice(0, 5).forEach((it) => {
         const tr = document.createElement('tr');
-        [it.sid, maskId(it.id), it.name].forEach((v) => { const td = document.createElement('td'); td.textContent = v; tr.append(td); });
+        [it.sid, maskId(it.id), it.name, it.no || '-', it.byear || '-'].forEach((v) => { const td = document.createElement('td'); td.textContent = v; tr.append(td); });
         tb.append(tr);
       });
       t.append(tb); box.append(t);
@@ -1129,6 +1150,7 @@ let dashFilter = 'all';
 let dashVisible = []; // เอกสารที่เลือกได้ในรายการที่กรองอยู่ ใช้กับ "เลือกทั้งหมด"
 const dashSel = new Set();
 const dashSearch = $('dashSearch');
+const audit = {}; // ชื่อ -> { no?: ลำดับที่ถูก, year?: { doc, ref } } เฉพาะคนที่เอกสารที่ส่งแล้วไม่ตรงทะเบียน
 const byNo = (a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : 0);
 const dashWhen = (iso) => new Date(iso).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -1171,6 +1193,8 @@ function renderDash() {
         if (noCount[doc.no] > 1) fl.push('dup');
         if (printState(doc) === 'changed') fl.push('changed');
       }
+      if (p.bad || audit[p.name]?.no) fl.push('badno'); // ลำดับที่กรอกไม่ตรงทะเบียน (ต้องนำเข้าลำดับตามทะเบียนก่อน)
+      if (audit[p.name]?.year) fl.push('badyear');
     }
     return { p, doc, st: known && doc ? printState(doc) : '', fl };
   });
@@ -1213,6 +1237,9 @@ function renderDash() {
     if (dups.length) alerts.push(`⚠ เลขที่ซ้ำกัน: ${dups.join(', ')} (สองคนกรอกเลขที่เดียวกัน) ตรวจก่อนพิมพ์`);
     if (miss) alerts.push(`⚠ กรอกแล้วแต่ไม่พบไฟล์ใน Drive ${miss} คน (พิมพ์ไม่ได้)`);
     if (chg) alerts.push(`⚠ ส่งใหม่หลังพิมพ์ ${chg} ฉบับ ต้องพิมพ์ซ้ำ`);
+    const badNo = rows.filter((r) => r.fl.includes('badno')).length, badYear = rows.filter((r) => r.fl.includes('badyear')).length;
+    if (badNo) alerts.push(`⚠ ลำดับไม่ตรงทะเบียน ${badNo} คน (ต้องลบให้กรอกใหม่) ดูได้ที่ตัวกรอง "ต้องตรวจ"`);
+    if (badYear) alerts.push(`⚠ ปีเกิดในเอกสารไม่ตรงทะเบียน ${badYear} คน (ต้องลบให้กรอกใหม่) ดูได้ที่ตัวกรอง "ต้องตรวจ"`);
     if (!alerts.length) alerts.push(doneP.length ? '✓ ไม่มีรายการที่ต้องตรวจ' : 'ยังไม่มีใครกรอก');
   }
   $('dashAlerts').replaceChildren(...alerts.map((t) => el$('li', { className: t.startsWith('✓') ? 'good' : '' }, t)));
@@ -1254,7 +1281,9 @@ function renderDash() {
   selAll.parentElement.hidden = !known;
   selAll.checked = dashVisible.length > 0 && dashVisible.every((d) => dashSel.has(docKey(d)));
 
-  const TAGS = { missing: 'ไม่พบไฟล์', old: '⚠ แบบเก่า', dup: 'เลขที่ซ้ำ' };
+  const tagText = (f, p) => ({ missing: 'ไม่พบไฟล์', old: '⚠ แบบเก่า', dup: 'เลขที่ซ้ำ',
+    badno: `ลำดับผิด${p.want || audit[p.name]?.no ? ` (ควรเป็น ${p.want || audit[p.name].no})` : ''}`,
+    badyear: `ปีเกิดผิด (เอกสาร ${audit[p.name]?.year?.doc} ทะเบียน ${audit[p.name]?.year?.ref})` })[f];
   $('dashDone').replaceChildren(...shown.map(({ p, doc, st, fl }) => {
     const li = el$('li', { className: 'ok' });
     if (known && doc) {
@@ -1264,7 +1293,7 @@ function renderDash() {
     } else if (known) li.append(el$('span', { className: 'chk' })); // ช่องว่างให้แนวคอลัมน์ตรงกัน
     li.append(el$('span', { className: 'idx', title: 'เลขที่' }, +p.no), el$('span', { className: 'nm' }, p.name));
     if (doc?.at) li.append(el$('span', { className: 'when' }, dashWhen(doc.at)));
-    fl.filter((f) => TAGS[f]).forEach((f) => li.append(el$('span', { className: 'old-tag' }, TAGS[f])));
+    fl.filter((f) => tagText(f, p)).forEach((f) => li.append(el$('span', { className: 'old-tag' }, tagText(f, p))));
     if (!known) li.append(el$('span', { className: 'tag' }, '✓ กรอกแล้ว'));
     else if (st) li.append(el$('span', { className: `tag ${st === 'done' ? '' : st === 'changed' ? 'warn' : 'wait'}` },
       st === 'done' ? '✓ พิมพ์แล้ว' : st === 'changed' ? 'ส่งใหม่ ต้องพิมพ์ซ้ำ' : 'รอพิมพ์'));
@@ -1277,6 +1306,52 @@ function renderDash() {
   }));
   if (!shown.length) $('dashDone').append(el$('li', { className: 'empty' }, q ? 'ไม่พบชื่อที่ค้นหา' : doneP.length ? 'ไม่มีรายการในตัวกรองนี้' : 'ยังไม่มีใครกรอก'));
 }
+
+// ตรวจเอกสารที่ส่งไปแล้วกับทะเบียน (ลำดับ + ปีเกิด) โดยอ่านข้อความในไฟล์ Word ที่เบราว์เซอร์ของครู ไม่ต้องแก้สคริปต์เพิ่ม
+// วัน/เดือนเกิดตรวจไม่ได้ เพราะทะเบียนมีแค่ปีเกิด
+async function wordText(bytes) {
+  const xml = await (await JSZip.loadAsync(bytes)).file('word/document.xml').async('string');
+  return [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+}
+
+async function auditDocs(btn) {
+  const say = (t) => { $('dashMsg').textContent = t; };
+  btn.disabled = true;
+  try {
+    say('กำลังโหลดข้อมูลทะเบียน…');
+    const ref = new Map((await adminCall('adminRef')).list.map((x) => [squash(x.name), x]));
+    if (!ref.size) { say('ยังไม่มีลำดับ/ปีเกิดตามทะเบียนในระบบ นำเข้าไฟล์ที่มีคอลัมน์ "ลำดับ" และ "ปีเกิด" ที่แท็บสำหรับครูก่อน (ต้องใช้สคริปต์รุ่น admin-import-5 ขึ้นไป)'); return; }
+    const list = docs.filter((d) => d.docx && ref.has(squash(d.name)));
+    Object.keys(audit).forEach((k) => delete audit[k]);
+    const unreadable = [];
+    for (let i = 0; i < list.length; i += 6) {
+      const chunk = list.slice(i, i + 6);
+      say(`กำลังตรวจไฟล์ Word… ${Math.min(i + 6, list.length)}/${list.length}`);
+      const files = await fetchDriveFiles(chunk.map((d) => d.docx));
+      for (const d of chunk) {
+        try {
+          const text = await wordText(files.get(d.docx).bytes);
+          const no = toArabic((/ลำดับในบัญชีรายชื่อ\s*([๐-๙]+)/.exec(text) || [])[1] || '');
+          const year = toArabic((/เกิดวันที่\s*[๐-๙]+\s*เดือน\s*[ก-๙]+\s*พ\.ศ\.\s*([๐-๙]{4})/.exec(text) || [])[1] || '');
+          if (!no || !year) throw new Error('อ่านไม่ได้');
+          const r = ref.get(squash(d.name)), a = {};
+          if (r.no && +no !== r.no) a.no = r.no;
+          if (r.byear && +year !== r.byear) a.year = { doc: year, ref: r.byear };
+          if (a.no || a.year) audit[squash(d.name)] = a;
+        } catch (e) { unreadable.push(squash(d.name)); }
+      }
+    }
+    const bad = Object.values(audit);
+    say(`ตรวจไฟล์ Word ${list.length} ฉบับแล้ว: ปีเกิดไม่ตรงทะเบียน ${bad.filter((a) => a.year).length} คน, ลำดับไม่ตรง ${bad.filter((a) => a.no).length} คน${unreadable.length ? `, อ่านไฟล์ไม่ได้ ${unreadable.length} คน (${unreadable.slice(0, 3).join(', ')}${unreadable.length > 3 ? '…' : ''})` : ''} ดูที่ตัวกรอง "ต้องตรวจ" (วัน/เดือนเกิดตรวจไม่ได้ เพราะทะเบียนมีแค่ปีเกิด)`);
+  } catch (e) {
+    if (/รหัสครู|ล็อก/.test(String(e.message))) adminLogout();
+    say(`ตรวจไม่สำเร็จ: ${String(e.message || e)}`);
+  } finally {
+    btn.disabled = false;
+    renderDash();
+  }
+}
+$('dtAudit').addEventListener('click', (e) => auditDocs(e.currentTarget));
 
 // พิมพ์จากแดชบอร์ด: ถามเรื่องแบบเก่าก่อน แล้ววาดแดชบอร์ดใหม่หลังพิมพ์ (ปุ่มจะถูก printDocs เปิดคืนเอง)
 async function runPrint(list, btn) {
@@ -1389,7 +1464,7 @@ async function sendCopies(v, pdf) {
   const sig = JSON.stringify(v);
   if (sig === lastSent) return 'sent';
   const docx = await makeDocx(v);
-  await callScript({ no: v.no, id: v.id, pdf: toBase64(pdf), docx: toBase64(docx) });
+  await callScript({ no: v.no, id: v.id, byear: v.year, pdf: toBase64(pdf), docx: toBase64(docx) });
   lastSent = sig;
   return 'sent';
 }

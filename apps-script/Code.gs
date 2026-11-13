@@ -20,7 +20,7 @@ const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 const CACHE_SECONDS = 20;
 
 // ใช้เช็กว่าลิงก์ /exec รันโค้ดรุ่นไหน: เปิดลิงก์แล้วดูค่า version
-const VERSION = 'admin-import-4';
+const VERSION = 'admin-import-5';
 
 function doGet() {
   try {
@@ -40,16 +40,18 @@ function doPost(e) {
     if (d.action === 'adminDelete') { requireAdmin_(d.pin); return reply_(deleteSubmission_(d)); }
     if (d.action === 'adminDocs') { requireAdmin_(d.pin); return reply_({ ok: true, docs: docsList_() }); }
     if (d.action === 'adminFiles') { requireAdmin_(d.pin); return reply_(filesPayload_(d)); }
+    if (d.action === 'adminRef') { requireAdmin_(d.pin); return reply_(refPayload_()); }
 
     // รายชื่อให้นักเรียนกดเลือก + ใครส่งแล้ว: ส่งเฉพาะชื่อ ไม่ส่งเลขบัตรหรือเลข นศท.
     if (d.action === 'list') return reply_(listPayload_());
 
     const roster = loadRoster_();
     // นักเรียนกดเลือกชื่อ: คืนเลขบัตรประชาชนและเลข นศท. ของคนนั้นคนเดียว
+    // refNo/refYear = ลำดับและปีเกิด (พ.ศ.) ตามทะเบียน ให้หน้าเว็บตรวจที่นักเรียนกรอก (0 = ไม่มีข้อมูลให้ตรวจ)
     if (d.action === 'pick') {
       const s = roster.filter(function (x) { return x.key === String(d.key); })[0];
       if (!s) return reply_({ ok: true, found: false });
-      return reply_({ ok: true, found: true, id: s.id, sid: s.sid });
+      return reply_({ ok: true, found: true, id: s.id, sid: s.sid, refNo: s.refNo, refYear: s.refYear });
     }
 
     const id = parseId_(d.id);
@@ -57,6 +59,9 @@ function doPost(e) {
     const student = roster.filter(function (x) { return x.id === id; })[0];
     if (!student) throw new Error('not in roster');
     const no = parseNo_(d.no);
+    // ตรวจซ้ำฝั่งนี้ กันหน้าเว็บรุ่นเก่าหรือคนข้ามการตรวจ (byear ส่งมาเฉพาะหน้าเว็บรุ่นใหม่)
+    if (student.refNo && Number(no) !== student.refNo) throw new Error('ลำดับไม่ตรงกับบัญชีรายชื่อ');
+    if (student.refYear && d.byear != null && Number(digits_(d.byear)) !== student.refYear) throw new Error('ปีเกิดไม่ตรงกับทะเบียน');
     const label = no + ' ' + student.first + ' ' + student.last;
     const pdf = decode_(d.pdf, '%PDF');
     const docx = decode_(d.docx, 'PK');
@@ -173,7 +178,8 @@ function adminInfo_() {
   return info;
 }
 
-// รับรายการ [{ sid, id, name }] จากหน้าเว็บ ตรวจซ้ำฝั่งนี้ทุกแถว แล้วเขียนทับแท็บชื่อ label ในชีตรายชื่อ (สร้างชีตให้ถ้ายังไม่มี)
+// รับรายการ [{ sid, id, name, no?, byear? }] จากหน้าเว็บ ตรวจซ้ำฝั่งนี้ทุกแถว แล้วเขียนทับแท็บชื่อ label ในชีตรายชื่อ (สร้างชีตให้ถ้ายังไม่มี)
+// no = ลำดับในบัญชีรายชื่อ, byear = ปีเกิด พ.ศ. (ไม่บังคับ ถ้ามีหน้าเว็บจะตรวจที่นักเรียนกรอก)
 function importRoster_(d) {
   const label = String(d.label == null ? '' : d.label).trim();
   if (!label || label.length > 30 || /[\[\]*?:\/\\]/.test(label)) throw new Error('ชื่อชุดรายชื่อไม่ถูกต้อง (1-30 ตัวอักษร ห้ามมี [ ] * ? : / \\)');
@@ -181,7 +187,7 @@ function importRoster_(d) {
   if (!Array.isArray(items) || !items.length) throw new Error('ไม่มีรายชื่อให้นำเข้า');
   if (items.length > MAX_ROSTER_ROWS) throw new Error('รายชื่อมากเกินไป (สูงสุด ' + MAX_ROSTER_ROWS + ' คน)');
 
-  const seen = {};
+  const seen = {}, seenNo = {};
   const rows = items.map(function (it, i) {
     const sid = digits_(it && it.sid), id = digits_(it && it.id), name = String((it && it.name) || '').replace(/\s+/g, ' ').trim();
     if (!/^\d{1,12}$/.test(sid)) throw new Error('แถวที่ ' + (i + 1) + ': เลข นศท. ไม่ถูกต้อง');
@@ -189,7 +195,14 @@ function importRoster_(d) {
     if (!/^[฀-๿ a-zA-Z.\-]{3,80}$/.test(name) || !splitName_(name)) throw new Error('แถวที่ ' + (i + 1) + ': ชื่อ-สกุลไม่ถูกต้อง');
     if (seen[id]) throw new Error('แถวที่ ' + (i + 1) + ': เลขประจำตัวประชาชนซ้ำกับแถวที่ ' + seen[id]);
     seen[id] = i + 1;
-    return [sid, id, name];
+    const no = digits_(it && it.no), byear = digits_(it && it.byear);
+    if (no && (Number(no) < 1 || Number(no) > 999)) throw new Error('แถวที่ ' + (i + 1) + ': ลำดับต้องเป็น 1-999');
+    if (byear && (Number(byear) < 2400 || Number(byear) > 2600)) throw new Error('แถวที่ ' + (i + 1) + ': ปีเกิดต้องเป็น พ.ศ. 4 หลัก');
+    if (no) {
+      if (seenNo[Number(no)]) throw new Error('แถวที่ ' + (i + 1) + ': ลำดับซ้ำกับแถวที่ ' + seenNo[Number(no)]);
+      seenNo[Number(no)] = i + 1;
+    }
+    return [sid, id, name, no ? String(Number(no)) : '', byear];
   });
 
   const lock = LockService.getScriptLock();
@@ -207,8 +220,8 @@ function importRoster_(d) {
       sheet = only.length === 1 && only[0].getLastRow() === 0 ? only[0].setName(label) : book.insertSheet(label);
     }
     sheet.clear();
-    const all = [['เลขประจำตัว นศท.', 'เลขประจำตัวประชาชน', 'ชื่อ - สกุล']].concat(rows);
-    sheet.getRange(1, 1, all.length, 3).setNumberFormat('@').setValues(all); // เป็นข้อความ เพื่อไม่ให้เลขนำหน้า 0 หาย
+    const all = [['เลขประจำตัว นศท.', 'เลขประจำตัวประชาชน', 'ชื่อ - สกุล', 'ลำดับ', 'ปีเกิด (พ.ศ.)']].concat(rows);
+    sheet.getRange(1, 1, all.length, 5).setNumberFormat('@').setValues(all); // เป็นข้อความ เพื่อไม่ให้เลขนำหน้า 0 หาย
     sheet.setFrozenRows(1);
   } finally {
     lock.releaseLock();
@@ -312,7 +325,11 @@ function loadRoster_() {
       const id = digits_(row[cols.id]);
       const sid = digits_(row[cols.sid]);
       const name = splitName_(row[cols.name]);
-      if (id.length === 13 && sid && name) roster.push({ key: t + '-' + r, id: id, sid: sid, first: name.first, last: name.last });
+      if (id.length === 13 && sid && name) {
+        roster.push({ key: t + '-' + r, id: id, sid: sid, first: name.first, last: name.last,
+          refNo: cols.no >= 0 ? Number(digits_(row[cols.no])) || 0 : 0,
+          refYear: cols.byear >= 0 ? Number(digits_(row[cols.byear])) || 0 : 0 });
+      }
     });
   });
   return roster;
@@ -332,16 +349,27 @@ function listPayload_() {
   }
   const list = loadRoster_().map(function (s) {
     const no = sent[(s.first + ' ' + s.last).replace(/\s+/g, ' ').trim()];
-    return { k: s.key, first: s.first, last: s.last, done: !!no, no: no || '' };
+    const item = { k: s.key, first: s.first, last: s.last, done: !!no, no: no || '' };
+    // ส่งแล้วแต่ลำดับที่กรอกไม่ตรงทะเบียน (want = ลำดับที่ถูก) ให้หน้าสรุปติดป้ายเตือนครู
+    if (no && s.refNo && Number(no) !== s.refNo) { item.bad = true; item.want = s.refNo; }
+    return item;
   });
   const payload = { ok: true, list: list };
   cache.put('list', JSON.stringify(payload), CACHE_SECONDS);
   return payload;
 }
 
+// ลำดับและปีเกิดตามทะเบียนของทุกคนที่มีข้อมูล (เฉพาะครู) ให้หน้าสรุปตรวจเอกสารที่ส่งไปแล้ว
+function refPayload_() {
+  return { ok: true, list: loadRoster_().filter(function (s) { return s.refNo || s.refYear; }).map(function (s) {
+    return { name: (s.first + ' ' + s.last).replace(/\s+/g, ' ').trim(), no: s.refNo, byear: s.refYear };
+  }) };
+}
+
+// id / sid / name บังคับ ส่วน no / byear (ลำดับ, ปีเกิด) ไม่บังคับ ไม่มี = -1
 function headerColumns_(row) {
   const find = function (re) { return row.findIndex(function (c) { return re.test(String(c)); }); };
-  const cols = { id: find(/ประชาชน/), sid: find(/นศท/), name: find(/ชื่อ/) };
+  const cols = { id: find(/ประชาชน/), sid: find(/นศท/), name: find(/ชื่อ/), no: find(/ลำดับ/), byear: find(/ปีเกิด/) };
   return cols.id >= 0 && cols.sid >= 0 && cols.name >= 0 ? cols : null;
 }
 
